@@ -1,0 +1,205 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+model User {
+  id String @id
+  name String
+  email String @unique
+  emailVerified Boolean @default(false)
+  image String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  role String @default("unset")
+  goal String @default("Build strength & consistency")
+  consentVersion String?
+  sessions Session[]
+  accounts Account[]
+  studio Studio?
+  memberships Membership[]
+  enrollments Enrollment[]
+  messages Message[]
+  billing BillingSubscription?
+}
+model Session {
+  id String @id
+  token String @unique
+  userId String
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+}
+model Account {
+  id String @id
+  accountId String
+  providerId String
+  userId String
+  accessToken String?
+  refreshToken String?
+  idToken String?
+  accessTokenExpiresAt DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope String?
+  password String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@unique([providerId, accountId])
+}
+model Verification {
+  id String @id
+  identifier String
+  value String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([identifier])
+}
+model RateLimit {
+  id String @id @default(cuid())
+  key String @unique
+  count Int
+  lastRequest BigInt
+}
+model Studio {
+  id String @id @default(cuid())
+  name String
+  ownerId String @unique
+  createdAt DateTime @default(now())
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  memberships Membership[]
+  invitations Invitation[]
+  plans WorkoutPlan[]
+  classes ClassSession[]
+}
+model Membership {
+  id String @id @default(cuid())
+  studioId String
+  userId String
+  createdAt DateTime @default(now())
+  studio Studio @relation(fields: [studioId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([studioId, userId])
+  @@index([userId])
+}
+model Invitation {
+  id String @id @default(cuid())
+  studioId String
+  codeHash String @unique
+  email String
+  expiresAt DateTime
+  consumedAt DateTime?
+  createdAt DateTime @default(now())
+  studio Studio @relation(fields: [studioId], references: [id], onDelete: Cascade)
+}
+model WorkoutPlan {
+  id String @id @default(cuid())
+  studioId String
+  name String
+  description String
+  blocks Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  studio Studio @relation(fields: [studioId], references: [id], onDelete: Cascade)
+  classes ClassSession[]
+}
+model ClassSession {
+  id String @id @default(cuid())
+  studioId String
+  planId String?
+  title String
+  startsAt DateTime
+  duration Int @default(45)
+  capacity Int @default(8)
+  status String @default("scheduled")
+  exercise String @default("squat")
+  revision Int @default(0)
+  paused Boolean @default(false)
+  startedAt DateTime?
+  endedAt DateTime?
+  createdAt DateTime @default(now())
+  studio Studio @relation(fields: [studioId], references: [id], onDelete: Cascade)
+  plan WorkoutPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  enrollments Enrollment[]
+  messages Message[]
+  @@index([studioId, startsAt])
+}
+model Enrollment {
+  id String @id @default(cuid())
+  classId String
+  userId String
+  consentAt DateTime?
+  helpRequested Boolean @default(false)
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  class ClassSession @relation(fields: [classId], references: [id], onDelete: Cascade)
+  metric Metric?
+  summary WorkoutSummary?
+  @@unique([classId, userId])
+  @@index([userId])
+}
+model Metric {
+  id String @id @default(cuid())
+  enrollmentId String @unique
+  exercise String
+  revision Int
+  reps Int
+  holdSeconds Int @default(0)
+  score Float?
+  confidence Float
+  phase String
+  cue String
+  updatedAt DateTime @updatedAt
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+}
+model WorkoutSummary {
+  id String @id @default(cuid())
+  enrollmentId String @unique
+  totalReps Int @default(0)
+  trackedSamples Int @default(0)
+  scoreTotal Float @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+}
+model Message {
+  id String @id @default(cuid())
+  classId String
+  senderId String
+  recipientId String?
+  text String
+  kind String @default("chat")
+  createdAt DateTime @default(now())
+  class ClassSession @relation(fields: [classId], references: [id], onDelete: Cascade)
+  sender User @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  @@index([classId, createdAt])
+}
+model BillingSubscription {
+  id String @id @default(cuid())
+  userId String @unique
+  customerId String @unique
+  subscriptionId String? @unique
+  status String @default("inactive")
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+model WebhookEvent {
+  id String @id
+  createdAt DateTime @default(now())
+}
+model AuditEvent {
+  id String @id @default(cuid())
+  actorId String
+  action String
+  targetId String
+  createdAt DateTime @default(now())
+  @@index([actorId, createdAt])
+}

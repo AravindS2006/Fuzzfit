@@ -1,0 +1,51 @@
+import { NextResponse } from 'next/server';
+import { AccessToken, TrackSource } from 'livekit-server-sdk';
+import { z } from 'zod';
+import {
+  ApiError,
+  requireUser,
+  readJson,
+  rateLimit,
+  requireClass,
+  safeError,
+} from '@/lib/security';
+export async function POST(request: Request) {
+  try {
+    const user = await requireUser();
+    const { classId } = z.object({ classId: z.string().max(100) }).parse(await readJson(request));
+    await rateLimit(user.id, 'token', 10);
+    const item = await requireClass(classId, user.id);
+    if (item.status !== 'live')
+      throw new ApiError(409, 'The coach has not started this class, or it has ended.');
+    if (
+      item.studio.ownerId !== user.id &&
+      !item.enrollments.find((e) => e.userId === user.id)?.consentAt
+    )
+      throw new ApiError(403, 'Please complete the sharing consent first.');
+    if (!process.env.LIVEKIT_URL || !process.env.LIVEKIT_API_KEY || !process.env.LIVEKIT_API_SECRET)
+      throw new ApiError(
+        503,
+        'Live video is not configured yet. Camera practice still works locally.',
+      );
+    const token = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {
+      identity: user.id,
+      name: user.name,
+      ttl: '5m',
+    });
+    token.addGrant({
+      roomJoin: true,
+      room: `fuzzfit-${item.id}`,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: false,
+      canPublishSources: [TrackSource.CAMERA, TrackSource.MICROPHONE],
+      canUpdateOwnMetadata: false,
+    });
+    return NextResponse.json(
+      { token: await token.toJwt(), url: process.env.LIVEKIT_URL },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
+  } catch (error) {
+    return safeError(error);
+  }
+}

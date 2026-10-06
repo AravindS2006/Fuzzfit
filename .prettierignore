@@ -1,0 +1,7 @@
+node_modules
+.next
+public/vision
+prisma
+package-lock.json
+docs
+next-env.d.ts

@@ -1,0 +1,325 @@
+import { createHash, randomBytes } from 'node:crypto';
+import { NextResponse } from 'next/server';
+import { db } from '@/lib/db';
+import { commandSchema } from '@/lib/validation';
+import {
+  ApiError,
+  requireUser,
+  readJson,
+  rateLimit,
+  safeError,
+  requireClass,
+} from '@/lib/security';
+import { RoomServiceClient } from 'livekit-server-sdk';
+export async function POST(request: Request) {
+  try {
+    const user = await requireUser();
+    const data = commandSchema.parse(await readJson(request));
+    await rateLimit(user.id, 'command');
+    const studio = await db.studio.findUnique({ where: { ownerId: user.id } });
+    const requireCoach = () => {
+      if (user.role !== 'coach' || !studio)
+        throw new ApiError(403, 'Only your studio coach can do this.');
+      return studio;
+    };
+    let result: Record<string, unknown> = { ok: true };
+    switch (data.action) {
+      case 'onboard': {
+        if (user.role !== 'unset') throw new ApiError(409, 'Your account is already set up.');
+        await db.$transaction(
+          async (tx) => {
+            const updated = await tx.user.updateMany({
+              where: { id: user.id, role: 'unset' },
+              data: { name: data.name, role: data.role, consentVersion: 'adult-wellness-v1' },
+            });
+            if (!updated.count) throw new ApiError(409, 'Your account is already set up.');
+            if (data.role === 'coach')
+              await tx.studio.create({
+                data: {
+                  ownerId: user.id,
+                  name: data.studioName?.trim() || `${data.name}'s studio`,
+                },
+              });
+          },
+          { isolationLevel: 'Serializable' },
+        );
+        break;
+      }
+      case 'invite': {
+        const owned = requireCoach();
+        const code = randomBytes(24).toString('base64url');
+        await db.invitation.create({
+          data: {
+            studioId: owned.id,
+            email: data.email,
+            codeHash: createHash('sha256').update(code).digest('hex'),
+            expiresAt: new Date(Date.now() + 7 * 86400000),
+          },
+        });
+        result = {
+          ok: true,
+          code,
+          url: `${process.env.BETTER_AUTH_URL}/invite?code=${code}`,
+          expiresInDays: 7,
+        };
+        break;
+      }
+      case 'acceptInvite': {
+        if (user.role !== 'trainee')
+          throw new ApiError(403, 'Set up a trainee account to accept this invitation.');
+        const invitation = await db.invitation.findUnique({
+          where: { codeHash: createHash('sha256').update(data.code).digest('hex') },
+        });
+        if (
+          !invitation ||
+          invitation.consumedAt ||
+          invitation.expiresAt < new Date() ||
+          invitation.email !== user.email.toLowerCase()
+        )
+          throw new ApiError(
+            400,
+            'This invitation is expired, used, or belongs to a different email.',
+          );
+        await db.$transaction(
+          async (tx) => {
+            if (await tx.membership.findFirst({ where: { userId: user.id } }))
+              throw new ApiError(409, 'You already belong to a studio.');
+            const claimed = await tx.invitation.updateMany({
+              where: { id: invitation.id, consumedAt: null, expiresAt: { gt: new Date() } },
+              data: { consumedAt: new Date() },
+            });
+            if (!claimed.count) throw new ApiError(409, 'This invitation has already been used.');
+            await tx.membership.create({
+              data: { studioId: invitation.studioId, userId: user.id },
+            });
+          },
+          { isolationLevel: 'Serializable' },
+        );
+        break;
+      }
+      case 'savePlan': {
+        const owned = requireCoach();
+        if (data.id) {
+          const exists = await db.workoutPlan.findFirst({
+            where: { id: data.id, studioId: owned.id },
+          });
+          if (!exists) throw new ApiError(404, 'Plan not found.');
+        }
+        const plan = data.id
+          ? await db.workoutPlan.update({
+              where: { id: data.id },
+              data: { name: data.name, description: data.description, blocks: data.blocks },
+            })
+          : await db.workoutPlan.create({
+              data: {
+                studioId: owned.id,
+                name: data.name,
+                description: data.description,
+                blocks: data.blocks,
+              },
+            });
+        result.id = plan.id;
+        break;
+      }
+      case 'deletePlan': {
+        const owned = requireCoach();
+        const removed = await db.workoutPlan.deleteMany({
+          where: { id: data.id, studioId: owned.id },
+        });
+        if (!removed.count) throw new ApiError(404, 'Plan not found.');
+        break;
+      }
+      case 'createClass': {
+        const owned = requireCoach();
+        const ids = [...new Set(data.participantIds)];
+        if (ids.length !== data.participantIds.length || ids.length > data.capacity)
+          throw new ApiError(400, 'Check the class capacity and participant list.');
+        if (new Date(data.startsAt).getTime() < Date.now() - 60000)
+          throw new ApiError(400, 'Choose a future start time.');
+        const members = await db.membership.count({
+          where: { studioId: owned.id, userId: { in: ids } },
+        });
+        if (members !== ids.length) throw new ApiError(403, 'Select clients from your own studio.');
+        const plan = data.planId
+          ? await db.workoutPlan.findFirst({ where: { id: data.planId, studioId: owned.id } })
+          : null;
+        if (data.planId && !plan) throw new ApiError(404, 'Plan not found.');
+        const item = await db.classSession.create({
+          data: {
+            studioId: owned.id,
+            title: data.title,
+            startsAt: new Date(data.startsAt),
+            duration: data.duration,
+            capacity: data.capacity,
+            planId: plan?.id,
+            enrollments: { create: ids.map((userId) => ({ userId })) },
+          },
+        });
+        result.id = item.id;
+        break;
+      }
+      case 'classControl': {
+        requireCoach();
+        const item = await requireClass(data.id, user.id);
+        if (item.studio.ownerId !== user.id)
+          throw new ApiError(403, 'Only this class coach can control it.');
+        if (data.control === 'end' && item.status === 'completed') {
+          await deleteRoom(item.id, [
+            item.studio.ownerId,
+            ...item.enrollments.map((e) => e.userId),
+          ]);
+          break;
+        }
+        const allowed =
+          data.control === 'start' || data.control === 'cancel' ? 'scheduled' : 'live';
+        if (item.status !== allowed)
+          throw new ApiError(409, 'The session state has changed. Refresh and retry.');
+        if (data.control === 'exercise' && !data.exercise)
+          throw new ApiError(400, 'Choose an exercise.');
+        if (data.control === 'start') await createRoom(item.id, item.capacity + 1);
+        const change =
+          data.control === 'start'
+            ? { status: 'live', startedAt: new Date(), paused: false }
+            : data.control === 'end'
+              ? { status: 'completed', endedAt: new Date(), paused: true }
+              : data.control === 'cancel'
+                ? { status: 'cancelled', endedAt: new Date() }
+                : data.control === 'exercise'
+                  ? { exercise: data.exercise, revision: { increment: 1 } }
+                  : { paused: data.control === 'pause', revision: { increment: 1 } };
+        const updated = await db.classSession.updateMany({
+          where: { id: item.id, status: allowed, revision: item.revision },
+          data: change,
+        });
+        if (!updated.count)
+          throw new ApiError(409, 'Another update was applied. Refresh and retry.');
+        await db.auditEvent.create({
+          data: { actorId: user.id, action: data.control, targetId: item.id },
+        });
+        if (data.control === 'end')
+          await deleteRoom(item.id, [
+            item.studio.ownerId,
+            ...item.enrollments.map((e) => e.userId),
+          ]);
+        break;
+      }
+      case 'consent': {
+        const item = await requireClass(data.id, user.id);
+        if (item.status !== 'live') throw new ApiError(409, 'This session is not live.');
+        if (item.studio.ownerId !== user.id)
+          await db.enrollment.update({
+            where: { classId_userId: { classId: item.id, userId: user.id } },
+            data: { consentAt: new Date() },
+          });
+        break;
+      }
+      case 'help': {
+        const item = await requireClass(data.id, user.id);
+        if (item.status !== 'live') throw new ApiError(409, 'This session is not live.');
+        const target = data.userId ?? user.id;
+        if (target !== user.id && (item.studio.ownerId !== user.id || data.requested))
+          throw new ApiError(403, 'Only the trainee can request help.');
+        if (!item.enrollments.some((e) => e.userId === target))
+          throw new ApiError(404, 'Participant not found.');
+        await db.enrollment.update({
+          where: { classId_userId: { classId: item.id, userId: target } },
+          data: { helpRequested: data.requested },
+        });
+        break;
+      }
+      case 'message': {
+        const item = await requireClass(data.id, user.id);
+        if (item.status !== 'live')
+          throw new ApiError(409, 'Messages are available during a live class.');
+        if (data.kind === 'cue' && item.studio.ownerId !== user.id)
+          throw new ApiError(403, 'Only the coach can send form cues.');
+        const target = data.recipientId;
+        if (
+          target &&
+          target !== item.studio.ownerId &&
+          !item.enrollments.some((e) => e.userId === target)
+        )
+          throw new ApiError(400, 'Recipient is not in this class.');
+        if (item.studio.ownerId !== user.id && target && target !== item.studio.ownerId)
+          throw new ApiError(403, 'Private trainee messages can only go to the coach.');
+        await rateLimit(user.id, 'message', 20);
+        await db.message.create({
+          data: {
+            classId: item.id,
+            senderId: user.id,
+            recipientId: target,
+            text: data.text,
+            kind: data.kind,
+          },
+        });
+        break;
+      }
+      case 'profile':
+        await db.user.update({
+          where: { id: user.id },
+          data: { name: data.name, goal: data.goal },
+        });
+        break;
+    }
+    return NextResponse.json(result);
+  } catch (error) {
+    return safeError(error);
+  }
+}
+function videoService() {
+  if (!process.env.LIVEKIT_URL || !process.env.LIVEKIT_API_KEY || !process.env.LIVEKIT_API_SECRET)
+    return null;
+  return new RoomServiceClient(
+    process.env.LIVEKIT_URL.replace('wss://', 'https://').replace('ws://', 'http://'),
+    process.env.LIVEKIT_API_KEY,
+    process.env.LIVEKIT_API_SECRET,
+  );
+}
+async function createRoom(id: string, maxParticipants: number) {
+  const service = videoService();
+  if (!service) return;
+  try {
+    await service.createRoom({
+      name: `fuzzfit-${id}`,
+      maxParticipants,
+      // Preserve an idle room through the longest supported class and its reconnect window.
+      emptyTimeout: 10800,
+      departureTimeout: 10800,
+    });
+  } catch {
+    throw new ApiError(
+      502,
+      'Live video could not be prepared. The class has not started; retry shortly.',
+    );
+  }
+}
+async function deleteRoom(id: string, identities: string[]) {
+  const service = videoService();
+  if (!service) return;
+  const cutoff = BigInt(Math.floor(Date.now() / 1000) + 1);
+  const revocations = await Promise.allSettled(
+    identities.map((identity) =>
+      service.removeParticipant(`fuzzfit-${id}`, identity, { revokeTokenTs: cutoff }),
+    ),
+  );
+  const revoked = revocations.every(
+    (result) => result.status === 'fulfilled' || isRoomMissing(result.reason),
+  );
+  try {
+    await service.deleteRoom(`fuzzfit-${id}`);
+  } catch (error) {
+    if (isRoomMissing(error) && revoked) return;
+    throw new ApiError(
+      502,
+      'The class ended, but video room cleanup failed. Retry End session to close the room.',
+    );
+  }
+  if (!revoked)
+    throw new ApiError(
+      502,
+      'The class ended and the room closed, but token revocation needs retry. Use End session again.',
+    );
+}
+function isRoomMissing(error: unknown) {
+  return !!error && typeof error === 'object' && 'status' in error && error.status === 404;
+}

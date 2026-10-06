@@ -1,0 +1,87 @@
+import { describe, expect, it } from 'vitest';
+import { validateProductionConfig } from '../scripts/production-config.mjs';
+
+const valid = {
+  DATABASE_PROVIDER: 'postgresql',
+  DATABASE_URL: 'postgresql://user:password@db.neon.tech/fuzzfit?sslmode=require',
+  DIRECT_URL: 'postgresql://user:password@direct.neon.tech/fuzzfit?sslmode=require',
+  BETTER_AUTH_SECRET: 'a'.repeat(43),
+  BETTER_AUTH_URL: 'https://fuzzfit.vercel.app',
+  LIVEKIT_URL: 'wss://fuzzfit.livekit.cloud',
+  LIVEKIT_API_KEY: 'key-for-test-only',
+  LIVEKIT_API_SECRET: 'secret-for-test-only',
+  RESEND_API_KEY: 're_test-only',
+  EMAIL_FROM: 'Fuzzfit <hello@fuzzfit.in>',
+  CRON_SECRET: 'b'.repeat(43),
+};
+describe('production deployment guard', () => {
+  it('accepts complete configuration with billing disabled', () => {
+    expect(validateProductionConfig(valid)).toEqual([]);
+  });
+  it('reports missing services using key names only', () => {
+    expect(validateProductionConfig({})).toContainEqual(
+      expect.stringContaining('LIVEKIT_API_SECRET'),
+    );
+  });
+  it.each([
+    'file:./dev.db',
+    'postgresql-not-a-url',
+    'postgresql://user:password@localhost/fuzzfit',
+    'postgresql://user:password@db.neon.tech/fuzzfit?sslmode=disable',
+  ])('rejects unsafe database configuration: %s', (url) => {
+    expect(validateProductionConfig({ ...valid, DATABASE_URL: url }).join(' ')).toContain(
+      'DATABASE_URL',
+    );
+  });
+  it.each([
+    'http://fuzzfit.vercel.app',
+    'https://localhost:3000',
+    'https://fuzzfit.vercel.app/login',
+    'https://fuzzfit.vercel.app?redirect=elsewhere',
+    'https://user:password@fuzzfit.vercel.app',
+  ])('rejects an invalid auth origin: %s', (url) => {
+    expect(validateProductionConfig({ ...valid, BETTER_AUTH_URL: url }).join(' ')).toContain(
+      'BETTER_AUTH_URL',
+    );
+  });
+  it('rejects weak or reused cleanup secrets', () => {
+    expect(validateProductionConfig({ ...valid, CRON_SECRET: 'short' }).join(' ')).toContain(
+      'CRON_SECRET',
+    );
+    expect(
+      validateProductionConfig({ ...valid, CRON_SECRET: valid.BETTER_AUTH_SECRET }).join(' '),
+    ).toContain('independent');
+  });
+  it('rejects template configuration and the restricted email test domain', () => {
+    expect(
+      validateProductionConfig({
+        ...valid,
+        EMAIL_FROM: 'Fuzzfit <hello@your-verified-domain.com>',
+      }).join(' '),
+    ).toContain('placeholder');
+    expect(
+      validateProductionConfig({ ...valid, EMAIL_FROM: 'onboarding@resend.dev' }).join(' '),
+    ).toContain('EMAIL_FROM');
+  });
+  it('rejects partially enabled billing', () => {
+    expect(
+      validateProductionConfig({ ...valid, STRIPE_SECRET_KEY: 'sk_test_sample' }).join(' '),
+    ).toContain('all three');
+  });
+  it('rejects write-only secret placeholders returned by Vercel env pull', () => {
+    expect(
+      validateProductionConfig({ ...valid, LIVEKIT_API_SECRET: '[SENSITIVE]' }).join(' '),
+    ).toContain('LIVEKIT_API_SECRET');
+  });
+  it('never includes secret values in configuration errors', () => {
+    const database = 'postgresql://someone:private-password@localhost/fuzzfit';
+    const errors = validateProductionConfig({
+      ...valid,
+      DATABASE_URL: database,
+      BETTER_AUTH_SECRET: 'private-secret',
+    }).join(' ');
+    expect(errors).not.toContain(database);
+    expect(errors).not.toContain('private-password');
+    expect(errors).not.toContain('private-secret');
+  });
+});

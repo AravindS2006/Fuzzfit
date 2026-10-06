@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "buildCommand": "npm run build:vercel",
+  "regions": ["sin1"],
+  "crons": [{ "path": "/api/retention", "schedule": "0 3 * * *" }]
+}

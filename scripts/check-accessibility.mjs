@@ -1,0 +1,71 @@
+import { chromium } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+import { writeFile } from 'node:fs/promises';
+const browser = await chromium.launch({ channel: 'msedge' });
+const context = await browser.newContext();
+const page = await context.newPage();
+const report = [];
+async function scan(path) {
+  const results = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
+    .analyze();
+  const violations = results.violations.map((v) => ({
+    id: v.id,
+    impact: v.impact,
+    nodes: v.nodes.map((n) => ({ target: n.target, html: n.html, summary: n.failureSummary })),
+  }));
+  report.push({ path, violations });
+  console.log(
+    path,
+    JSON.stringify(
+      violations.map((v) => ({
+        id: v.id,
+        count: v.nodes.length,
+        targets: v.nodes.slice(0, 8).map((n) => n.target),
+      })),
+    ),
+  );
+}
+for (const path of [
+  '/demo',
+  '/demo?view=clients',
+  '/demo?view=sessions',
+  '/demo?view=plans',
+  '/demo?view=analytics',
+  '/demo?view=settings',
+  '/demo?view=practice',
+  '/login',
+  '/privacy',
+]) {
+  await page.goto(`http://localhost:3000${path}`);
+  await page.waitForLoadState('networkidle');
+  await scan(path);
+}
+for (const [path, button] of [
+  ['/demo?view=plans', 'Create plan'],
+  ['/demo?view=clients', 'Invite client'],
+  ['/demo?view=sessions', 'Schedule session'],
+]) {
+  await page.goto(`http://localhost:3000${path}`);
+  await page.getByRole('button', { name: button, exact: true }).first().click();
+  await page.getByRole('dialog').waitFor();
+  await scan(`${path} + ${button} dialog`);
+}
+await page.goto('http://localhost:3000/demo');
+await page.getByRole('button', { name: 'Open studio', exact: true }).first().click();
+await page.getByText('ILLUSTRATIVE STUDIO PREVIEW', { exact: true }).waitFor();
+await scan('/demo + live studio');
+await page.getByLabel('Coaching cue').fill('Keep this movement controlled.');
+await page.getByRole('button', { name: 'Send class cue' }).click();
+await page.getByLabel('Session message', { exact: true }).fill('You are doing well.');
+await page.getByRole('button', { name: 'Send session message' }).click();
+await scan('/demo + populated studio conversation');
+await page.setViewportSize({ width: 390, height: 844 });
+await scan('/demo mobile + live studio');
+await page.goto('http://localhost:3000/demo');
+await scan('/demo mobile');
+await page.getByRole('button', { name: 'Open navigation' }).click();
+await scan('/demo mobile + navigation');
+await writeFile('docs/accessibility-report.json', JSON.stringify(report, null, 2));
+await browser.close();
+if (report.some((r) => r.violations.length)) process.exitCode = 1;

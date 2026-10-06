@@ -1,0 +1,33 @@
+name: Validate Fuzzfit
+on: [push, pull_request]
+jobs:
+  checks:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+      - run: npm ci
+      - run: npm run setup
+      - run: npm run typecheck
+      - run: npm run format:check
+      - run: npm test
+      - run: npm audit --audit-level=high
+      - run: npm run build
+      - name: API and browser verification
+        shell: pwsh
+        run: |
+          $fuzzfitServer = Start-Process -FilePath node -ArgumentList 'node_modules/next/dist/bin/next','start','--hostname','127.0.0.1' -WindowStyle Hidden -PassThru
+          try {
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              try { Invoke-WebRequest -Uri http://localhost:3000/api/health -UseBasicParsing | Out-Null; break } catch { Start-Sleep -Seconds 1 }
+            }
+            node scripts/test-api.mjs
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            npx playwright test
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            node scripts/check-accessibility.mjs
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally { Stop-Process -Id $fuzzfitServer.Id -Force -ErrorAction SilentlyContinue }
