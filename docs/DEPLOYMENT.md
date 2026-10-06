@@ -1,6 +1,6 @@
 # Deploy Fuzzfit on Vercel and LiveKit Cloud
 
-The workspace is linked to `aravinds2006s-projects/fuzzfit`, project `prj_m5uOzEvrg5TZ44AKN2CJ2jRJlERK`. Its assigned app domain is `fuzzfit.vercel.app`. The project exists, but no app deployment has been uploaded or promoted. Configure secrets directly in the providers rather than sending them in chat.
+The workspace is linked to `aravinds2006s-projects/fuzzfit`, project `prj_m5uOzEvrg5TZ44AKN2CJ2jRJlERK`. Its assigned app domain is `fuzzfit.vercel.app`. The private GitHub repository is connected. Git pushes now trigger remote builds, which are blocked by the required LiveKit and email configuration; there is no READY or promoted application deployment. Configure secrets directly in the providers rather than sending them in chat.
 
 The private auth and cleanup secrets, exact app origin, and PostgreSQL provider setting have been configured for Production. Node 22.x, the guarded build command, and staged domain assignment are configured. Required service keys and live checks remain pending. See `.env.production.example` for the production template.
 
@@ -70,7 +70,7 @@ Optional billing requires all three of `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECR
 
 Connect the GitHub repository to the existing `fuzzfit` Vercel project; reuse its configured environment and Neon integration. In [Project Settings → Git](https://vercel.com/aravinds2006s-projects/fuzzfit/settings/git), select Connect Git Repository → GitHub. Complete GitHub authorization as the repository owner. When GitHub offers repository access, select only the Fuzzfit repository. Return to Vercel and connect it. If the repository is missing, open the Vercel GitHub App installation settings and grant it access to that repository. [Vercel GitHub connection](https://vercel.com/docs/git/vercel-for-github).
 
-Next.js and Node 22.x are already selected. Set the Production Branch to the branch pushed to GitHub (currently `master`). `vercel.json` uses `npm run build:vercel`; the command rejects missing required secrets, insecure origins, and SQLite production storage. The build copies local camera runtime assets and verifies the pinned model checksum. The deployment has no external AI frame-upload dependency.
+Next.js and Node 22.x are already selected. The package engine range `^22.22.0` keeps deployments on Node 22.x with the required minimum; an unbounded `>=` range would select Vercel's newest available major. Set the Production Branch to the branch pushed to GitHub (currently `master`). `vercel.json` uses `npm run build:vercel`; the command rejects missing required secrets, insecure origins, and SQLite production storage. The build copies local camera runtime assets and verifies the pinned model checksum. The deployment has no external AI frame-upload dependency. [Vercel Node version selection](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions).
 
 Add the required values for each deployment environment. Preview builds need their own exact origin, database, auth secret, and video test project. Do not attach a preview to a production database. Apply migrations in the release step, then deploy/verify the preview and promote it. Automatic production deployment is not a substitute for the release gates.
 

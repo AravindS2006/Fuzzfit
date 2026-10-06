@@ -17,7 +17,7 @@ Checked 6 October 2026. **The Vercel project is configured; the application is n
 | Email | Owner reports Resend signup completed; configuration deferred at their request until the client's domain requirements are known; production build and public signup remain gated on verified email delivery |
 | Required app keys | 6 of 11 configured; missing LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, RESEND_API_KEY, EMAIL_FROM |
 | Billing | Disabled; paid entitlements and live payment verification remain future work |
-| Application deployment | No source upload, READY build, or promotion yet |
+| Application deployment | Git push triggers a remote build; the production guard rejects the five missing LiveKit/email keys; no READY build or promotion yet |
 | Local app | Still healthy at `http://localhost:3000`; local SQLite setup preserved |
 | New checks | 36 unit tests, TypeScript, formatting pass; production config diagnostics never print values |
 

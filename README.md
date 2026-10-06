@@ -6,7 +6,7 @@ A live fitness coaching studio built with Next.js, Better Auth, Prisma, LiveKit,
 
 ## Run locally
 
-Use Node **22.22 or newer**. The current workstation has Node 22.14; local checks ran there successfully, but a dependency declares 22.22 as its minimum, so use the documented minimum for deployment/CI.
+Use Node **22.x, at least 22.22.0**. The current workstation has Node 22.14; local checks ran there successfully, but a dependency declares 22.22 as its minimum, so use the documented minimum for deployment/CI. The package engine range keeps Vercel and CI on the same major version.
 
 ```sh
 npm ci
