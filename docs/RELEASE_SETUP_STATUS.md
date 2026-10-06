@@ -8,6 +8,8 @@ Checked 6 October 2026. **The Vercel project is configured; the application is n
 | Assigned app domain | `fuzzfit.vercel.app`; assigned/verified by Vercel, no application serving yet |
 | Build/runtime | Next.js, `npm ci`, guarded `npm run build:vercel`, Node 22.x, functions in Singapore `sin1` |
 | Domain assignment | Automatic assignment disabled; use a staged production build and explicit promotion |
+| GitHub | Private `AravindS2006/Fuzzfit` repository created and source pushed; `master` tracks `origin/master`; credentials, databases, builds, agent packages and generated assets excluded |
+| Vercel Git connection | Existing project connected to `AravindS2006/Fuzzfit`; Production Branch is `master` |
 | Auth and cleanup | Independent generated secrets stored as sensitive Production variables; origin and PostgreSQL provider set |
 | PostgreSQL | Dedicated `fuzzfit-production` Neon Free resource, Singapore, Better Auth retained, connected only to Production; pooled URL and DIRECT_URL configured |
 | Migration | `20261006000000_init` applied; basic read-only connectivity/auth/class/rate-limit queries pass |
