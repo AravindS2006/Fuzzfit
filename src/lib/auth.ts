@@ -3,6 +3,8 @@ import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { db } from './db';
 import { sendMail } from './mail';
+import { getEmailPolicy } from './email-policy.mjs';
+export const emailPolicy = getEmailPolicy(process.env);
 export const auth = betterAuth({
   appName: 'Fuzzfit',
   baseURL: process.env.BETTER_AUTH_URL,
@@ -13,27 +15,32 @@ export const auth = betterAuth({
   trustedOrigins: [process.env.BETTER_AUTH_URL || 'http://localhost:3000'],
   emailAndPassword: {
     enabled: true,
+    disableSignUp: !emailPolicy.signupEnabled,
     minPasswordLength: 12,
     maxPasswordLength: 128,
-    requireEmailVerification: process.env.VERCEL === '1',
-    sendResetPassword: async ({ user, url }) => {
-      await sendMail(
-        user.email,
-        'Reset your Fuzzfit password',
-        `Reset your password: ${url}\nIf you did not request this, ignore this email.`,
-      );
-    },
+    requireEmailVerification: emailPolicy.requireVerification,
+    sendResetPassword: emailPolicy.passwordResetEnabled
+      ? async ({ user, url }) => {
+          await sendMail(
+            user.email,
+            'Reset your Fuzzfit password',
+            `Reset your password: ${url}\nIf you did not request this, ignore this email.`,
+          );
+        }
+      : undefined,
   },
-  emailVerification: {
-    sendOnSignUp: !!process.env.RESEND_API_KEY,
-    sendVerificationEmail: async ({ user, url }) => {
-      await sendMail(
-        user.email,
-        'Verify your Fuzzfit email',
-        `Welcome to Fuzzfit. Verify your email: ${url}`,
-      );
-    },
-  },
+  emailVerification: emailPolicy.deliveryEnabled
+    ? {
+        sendOnSignUp: true,
+        sendVerificationEmail: async ({ user, url }) => {
+          await sendMail(
+            user.email,
+            'Verify your Fuzzfit email',
+            `Welcome to Fuzzfit. Verify your email: ${url}`,
+          );
+        },
+      }
+    : undefined,
   user: {
     additionalFields: {
       role: { type: 'string', defaultValue: 'unset', input: false },

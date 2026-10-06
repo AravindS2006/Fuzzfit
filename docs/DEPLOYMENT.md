@@ -1,8 +1,8 @@
 # Deploy Fuzzfit on Vercel and LiveKit Cloud
 
-The workspace is linked to `aravinds2006s-projects/fuzzfit`, project `prj_m5uOzEvrg5TZ44AKN2CJ2jRJlERK`. Its assigned app domain is `fuzzfit.vercel.app`. The private GitHub repository is connected. Git pushes now trigger remote builds, which are blocked by the required LiveKit and email configuration; there is no READY or promoted application deployment. Configure secrets directly in the providers rather than sending them in chat.
+The workspace is linked to `aravinds2006s-projects/fuzzfit`, project `prj_m5uOzEvrg5TZ44AKN2CJ2jRJlERK`. Its assigned app domain is `fuzzfit.vercel.app`. The private GitHub repository is connected and pushes trigger remote builds. All nine core production keys are present and `EMAIL_DELIVERY=disabled` defers email; service connectivity and launch checks remain separate from configuration validation. Configure secrets directly in the providers rather than sending them in chat.
 
-The private auth and cleanup secrets, exact app origin, and PostgreSQL provider setting have been configured for Production. Node 22.x, the guarded build command, and staged domain assignment are configured. Required service keys and live checks remain pending. See `.env.production.example` for the production template.
+The private auth and cleanup secrets, exact app origin, PostgreSQL provider, and LiveKit keys have been configured for Production. Node 22.x, the guarded build command, and staged domain assignment are configured. Live service checks remain pending. See `.env.production.example` for the production template.
 
 ## 1. PostgreSQL
 
@@ -46,9 +46,9 @@ Set a unique random `BETTER_AUTH_SECRET` of at least 32 characters and the exact
 
 The two generated secrets are independent and stored as sensitive Production variables. The app origin is `https://fuzzfit.vercel.app` unless a custom domain is explicitly configured later.
 
-The owner has completed Resend signup and has asked to defer email configuration until the client's domain requirements are known. Leave `RESEND_API_KEY` and `EMAIL_FROM` unset for now. This defers deployment through the guarded production build and public email/password signup; verification and password reset still need working email delivery. Do not insert dummy credentials or disable verification to bypass the guard.
+The owner has completed Resend signup and has asked to defer email configuration until the client's domain requirements are known. Set `EMAIL_DELIVERY=disabled` in Production. This allows the production build without `EMAIL_FROM` or `RESEND_API_KEY`. Existing mail credentials are ignored, no mail callbacks are installed, and production signup and new password-reset requests are closed in both the UI and authentication API. Existing verified accounts can still sign in; unverified accounts remain rejected. The demo and local camera practice can be deployed while client onboarding waits for a verified sender. Do not insert dummy sender values or turn off email ownership verification.
 
-When the domain is available, add it to Resend (a sending subdomain is suitable), publish the exact DNS records Resend provides, and wait for verified status. Create a domain-scoped sending key and add `RESEND_API_KEY` plus a sender such as `Fuzzfit <hello@your-verified-domain>` in Vercel Production. A Vercel subdomain does not give ownership of `vercel.app` DNS. Resend's test sender has recipient restrictions and is not a public onboarding solution. [Resend domain documentation](https://resend.com/docs/dashboard/domains/introduction).
+When the domain is available, add it to Resend (a sending subdomain is suitable), publish the exact DNS records Resend provides, and wait for verified status. Create a domain-scoped sending key and add `RESEND_API_KEY` plus a sender such as `Fuzzfit <hello@your-verified-domain>` in Vercel Production. Set `EMAIL_DELIVERY=resend` and redeploy to enable signup, verification email, and password reset. Test actual delivery before opening onboarding. Unspecified production delivery mode defaults to `resend`, so missing mail credentials still fail the build unless deferral is explicit. A Vercel subdomain does not give ownership of `vercel.app` DNS. Resend's test sender has recipient restrictions and is not a public onboarding solution. [Resend domain documentation](https://resend.com/docs/dashboard/domains/introduction).
 
 ## 4. Required production environment
 
@@ -61,7 +61,8 @@ When the domain is available, add it to Resend (a sending subdomain is suitable)
 | `BETTER_AUTH_URL` | Exact HTTPS app origin |
 | `LIVEKIT_URL` | LiveKit secure websocket endpoint |
 | `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | Server-side LiveKit credentials |
-| `RESEND_API_KEY`, `EMAIL_FROM` | Verification/reset delivery |
+| `EMAIL_DELIVERY=disabled` or `resend` | Explicit email deferral or delivery |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Required only when delivery mode is `resend` |
 | `CRON_SECRET` | Protected scheduled cleanup |
 
 Optional billing requires all three of `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID`. Keep separate Stripe test and live environments. Leave them empty until pricing and paid-access policies are confirmed. This implementation collects a coach subscription if explicitly enabled, but does not enforce paid entitlements for classes yet.

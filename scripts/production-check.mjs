@@ -1,4 +1,5 @@
 import { validateProductionConfig } from './production-config.mjs';
+import { getEmailPolicy } from '../src/lib/email-policy.mjs';
 const errors = validateProductionConfig(process.env);
 if (errors.length) {
   console.error(
@@ -9,4 +10,6 @@ if (errors.length) {
   console.log(
     'Production configuration validated. Provider connectivity and sending-domain verification still require live checks.',
   );
+  if (!getEmailPolicy({ ...process.env, VERCEL: '1' }).deliveryEnabled)
+    console.log('Email delivery disabled: production signup and password reset are unavailable.');
 }

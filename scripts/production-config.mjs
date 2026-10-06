@@ -1,3 +1,5 @@
+import { getEmailPolicy } from '../src/lib/email-policy.mjs';
+
 export const requiredProductionKeys = [
   'DATABASE_PROVIDER',
   'DATABASE_URL',
@@ -7,8 +9,6 @@ export const requiredProductionKeys = [
   'LIVEKIT_URL',
   'LIVEKIT_API_KEY',
   'LIVEKIT_API_SECRET',
-  'RESEND_API_KEY',
-  'EMAIL_FROM',
   'CRON_SECRET',
 ];
 
@@ -23,9 +23,18 @@ const localHost = (host) =>
  */
 export function validateProductionConfig(env) {
   const errors = [];
-  const missing = requiredProductionKeys.filter((key) => !env[key]?.trim());
+  let deliveryEnabled = true;
+  try {
+    deliveryEnabled = getEmailPolicy({ ...env, VERCEL: '1' }).deliveryEnabled;
+  } catch {
+    errors.push('EMAIL_DELIVERY must be resend or disabled.');
+  }
+  const keys = deliveryEnabled
+    ? [...requiredProductionKeys, 'RESEND_API_KEY', 'EMAIL_FROM']
+    : requiredProductionKeys;
+  const missing = keys.filter((key) => !env[key]?.trim());
   if (missing.length) errors.push(`Missing required keys: ${missing.join(', ')}.`);
-  for (const key of requiredProductionKeys) {
+  for (const key of keys) {
     if (env[key] && placeholder(env[key])) errors.push(`${key} contains a template placeholder.`);
   }
   if (env.DATABASE_PROVIDER !== 'postgresql') errors.push('DATABASE_PROVIDER must be postgresql.');
@@ -78,7 +87,7 @@ export function validateProductionConfig(env) {
   }
   if (env.BETTER_AUTH_SECRET && env.BETTER_AUTH_SECRET === env.CRON_SECRET)
     errors.push('Use independent auth and cleanup secrets.');
-  if (env.EMAIL_FROM) {
+  if (deliveryEnabled && env.EMAIL_FROM) {
     const sender = env.EMAIL_FROM.match(/^(?:[^<>]+<)?([^<>\s]+@[^<>\s]+\.[^<>\s]+)>?$/)?.[1];
     if (!sender || /@(resend\.dev|example\.(com|test|org))$/i.test(sender))
       errors.push('EMAIL_FROM must use an actual address on your verified sending domain.');

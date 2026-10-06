@@ -31,3 +31,5 @@ jobs:
             node scripts/check-accessibility.mjs
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } finally { Stop-Process -Id $fuzzfitServer.Id -Force -ErrorAction SilentlyContinue }
+      - name: Deferred-email authentication verification
+        run: npm run test:email-disabled

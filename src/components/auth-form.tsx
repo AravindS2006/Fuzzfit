@@ -5,11 +5,17 @@ import Link from 'next/link';
 import { ArrowUpRight, Eye, EyeOff, ArrowRight, Check } from 'lucide-react';
 import { authClient } from '@/lib/auth-client';
 import { Brand, MotionArt } from './ui';
-export function AuthForm() {
+export function AuthForm({
+  signupEnabled,
+  passwordResetEnabled,
+}: {
+  signupEnabled: boolean;
+  passwordResetEnabled: boolean;
+}) {
   const params = useSearchParams();
   const token = params.get('token'),
     invite = params.get('invite');
-  const [mode, setMode] = useState(token ? 'reset' : 'login'),
+  const [mode, setMode] = useState(token && passwordResetEnabled ? 'reset' : 'login'),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [notice, setNotice] = useState(''),
@@ -19,6 +25,11 @@ export function AuthForm() {
     setBusy(true);
     setError('');
     setNotice('');
+    if ((mode === 'signup' && !signupEnabled) || (mode === 'forgot' && !passwordResetEnabled)) {
+      setError('This account action is temporarily unavailable.');
+      setBusy(false);
+      return;
+    }
     const form = new FormData(event.currentTarget);
     const email = String(form.get('email') || ''),
       password = String(form.get('password') || '');
@@ -26,9 +37,7 @@ export function AuthForm() {
       if (mode === 'forgot') {
         const r = await authClient.requestPasswordReset({ email, redirectTo: '/login' });
         if (r.error) throw new Error(r.error.message);
-        setNotice(
-          'If this email has an account, you will receive a reset link when email delivery is configured.',
-        );
+        setNotice('If this email has an account, you will receive a password reset link.');
       } else if (mode === 'reset') {
         const r = await authClient.resetPassword({ newPassword: password, token: token || '' });
         if (r.error) throw new Error(r.error.message);
@@ -160,7 +169,7 @@ export function AuthForm() {
               </div>
             </label>
           )}
-          {mode === 'login' && (
+          {mode === 'login' && passwordResetEnabled && (
             <button
               type="button"
               className="text-link forgot"
@@ -194,19 +203,27 @@ export function AuthForm() {
                     : 'Update password'}
             <ArrowRight size={17} />
           </button>
-          <p className="auth-switch">
-            {mode === 'login' ? 'New to Fuzzfit?' : 'Already have an account?'}{' '}
-            <button
-              type="button"
-              onClick={() => {
-                setMode(mode === 'login' ? 'signup' : 'login');
-                setError('');
-                setNotice('');
-              }}
-            >
-              {mode === 'login' ? 'Join the movement' : 'Sign in'}
-            </button>
-          </p>
+          {!signupEnabled && (
+            <p className="inline-notice" role="status">
+              New account registration and password reset are temporarily unavailable. You can
+              explore the sample studio above.
+            </p>
+          )}
+          {signupEnabled && (
+            <p className="auth-switch">
+              {mode === 'login' ? 'New to Fuzzfit?' : 'Already have an account?'}{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  setMode(mode === 'login' ? 'signup' : 'login');
+                  setError('');
+                  setNotice('');
+                }}
+              >
+                {mode === 'login' ? 'Join the movement' : 'Sign in'}
+              </button>
+            </p>
+          )}
           <p className="microcopy">
             For adults 18+. Camera coaching supports general fitness; your coach remains in charge.{' '}
             <Link href="/privacy">Privacy & camera use</Link>

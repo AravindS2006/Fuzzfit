@@ -1,4 +1,5 @@
 import 'server-only';
+import { getEmailPolicy } from './email-policy.mjs';
 export function escapeHtml(value: string) {
   return value.replace(
     /[&<>"']/g,
@@ -6,7 +7,12 @@ export function escapeHtml(value: string) {
   );
 }
 export async function sendMail(to: string, subject: string, text: string) {
-  if (!process.env.RESEND_API_KEY) throw new Error('Email delivery is not configured.');
+  if (
+    !getEmailPolicy(process.env).deliveryEnabled ||
+    !process.env.RESEND_API_KEY ||
+    !process.env.EMAIL_FROM
+  )
+    throw new Error('Email delivery is not configured.');
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {

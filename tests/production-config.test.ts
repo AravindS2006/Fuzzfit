@@ -18,6 +18,37 @@ describe('production deployment guard', () => {
   it('accepts complete configuration with billing disabled', () => {
     expect(validateProductionConfig(valid)).toEqual([]);
   });
+  it('allows explicitly deferred email with no sender or API key', () => {
+    expect(
+      validateProductionConfig({
+        ...valid,
+        EMAIL_DELIVERY: 'disabled',
+        EMAIL_FROM: undefined,
+        RESEND_API_KEY: undefined,
+      }),
+    ).toEqual([]);
+  });
+  it('ignores dormant mail credentials when delivery is explicitly disabled', () => {
+    expect(
+      validateProductionConfig({
+        ...valid,
+        EMAIL_DELIVERY: 'disabled',
+        EMAIL_FROM: 'onboarding@resend.dev',
+        RESEND_API_KEY: '[SENSITIVE]',
+      }),
+    ).toEqual([]);
+  });
+  it('still requires a real sender when delivery is enabled or unspecified', () => {
+    for (const mode of ['resend', undefined])
+      expect(
+        validateProductionConfig({ ...valid, EMAIL_DELIVERY: mode, EMAIL_FROM: undefined }),
+      ).toContainEqual(expect.stringContaining('EMAIL_FROM'));
+  });
+  it('rejects unknown delivery modes rather than silently disabling email', () => {
+    expect(validateProductionConfig({ ...valid, EMAIL_DELIVERY: 'disable' })).toContain(
+      'EMAIL_DELIVERY must be resend or disabled.',
+    );
+  });
   it('reports missing services using key names only', () => {
     expect(validateProductionConfig({})).toContainEqual(
       expect.stringContaining('LIVEKIT_API_SECRET'),
