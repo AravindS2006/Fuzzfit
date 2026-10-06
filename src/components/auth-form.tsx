@@ -6,16 +6,24 @@ import { ArrowUpRight, Eye, EyeOff, ArrowRight, Check } from 'lucide-react';
 import { authClient } from '@/lib/auth-client';
 import { Brand, MotionArt } from './ui';
 export function AuthForm({
+  testingMode,
   signupEnabled,
   passwordResetEnabled,
 }: {
+  testingMode: boolean;
   signupEnabled: boolean;
   passwordResetEnabled: boolean;
 }) {
   const params = useSearchParams();
   const token = params.get('token'),
     invite = params.get('invite');
-  const [mode, setMode] = useState(token && passwordResetEnabled ? 'reset' : 'login'),
+  const [mode, setMode] = useState(
+      token && passwordResetEnabled
+        ? 'reset'
+        : params.get('mode') === 'signup' && signupEnabled
+          ? 'signup'
+          : 'login',
+    ),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [notice, setNotice] = useState(''),
@@ -33,6 +41,7 @@ export function AuthForm({
     const form = new FormData(event.currentTarget);
     const email = String(form.get('email') || ''),
       password = String(form.get('password') || '');
+    const callbackURL = invite ? `/login?invite=${encodeURIComponent(invite)}` : '/login';
     try {
       if (mode === 'forgot') {
         const r = await authClient.requestPasswordReset({ email, redirectTo: '/login' });
@@ -50,9 +59,16 @@ export function AuthForm({
                 email,
                 password,
                 name: String(form.get('name') || ''),
+                callbackURL,
               })
-            : await authClient.signIn.email({ email, password });
-        if (result.error) throw new Error(result.error.message);
+            : await authClient.signIn.email({ email, password, callbackURL });
+        if (result.error) {
+          if (result.error.code === 'EMAIL_NOT_VERIFIED' && passwordResetEnabled) {
+            setNotice('Check your email for a verification link, then sign in again.');
+            return;
+          }
+          throw new Error(result.error.message);
+        }
         const session = await authClient.getSession();
         if (!session.data) {
           setNotice('Check your email to verify your account, then sign in.');
@@ -120,6 +136,12 @@ export function AuthForm({
                 ? 'Your studio is ready when you are.'
                 : 'Let’s get you back to your studio.'}
           </p>
+          {testingMode && (
+            <p className="inline-notice" role="status">
+              Testing mode: email verification is off. Use your own email and save your password;
+              email recovery is unavailable.
+            </p>
+          )}
           {mode === 'signup' && (
             <label>
               Your name
@@ -220,7 +242,7 @@ export function AuthForm({
                   setNotice('');
                 }}
               >
-                {mode === 'login' ? 'Join the movement' : 'Sign in'}
+                {mode === 'login' ? 'Create account' : 'Sign in'}
               </button>
             </p>
           )}

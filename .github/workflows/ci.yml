@@ -33,3 +33,5 @@ jobs:
           } finally { Stop-Process -Id $fuzzfitServer.Id -Force -ErrorAction SilentlyContinue }
       - name: Deferred-email authentication verification
         run: npm run test:email-disabled
+      - name: Testing signup and both roles
+        run: npm run test:signup

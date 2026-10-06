@@ -10,6 +10,11 @@ if (errors.length) {
   console.log(
     'Production configuration validated. Provider connectivity and sending-domain verification still require live checks.',
   );
-  if (!getEmailPolicy({ ...process.env, VERCEL: '1' }).deliveryEnabled)
+  const policy = getEmailPolicy({ ...process.env, VERCEL: '1' });
+  if (policy.testingMode)
+    console.log(
+      'Testing signup enabled: email addresses are unverified and email recovery is unavailable.',
+    );
+  else if (!policy.deliveryEnabled)
     console.log('Email delivery disabled: production signup and password reset are unavailable.');
 }

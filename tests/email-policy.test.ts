@@ -2,6 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { getEmailPolicy } from '../src/lib/email-policy.mjs';
 
 describe('deferred email authentication', () => {
+  it('allows production testing signup without claiming email ownership or enabling mail', () => {
+    const policy = getEmailPolicy({ VERCEL: '1', EMAIL_DELIVERY: 'test' });
+    expect(policy.testingMode).toBe(true);
+    expect(policy.requireVerification).toBe(false);
+    expect(policy.signupEnabled).toBe(true);
+    expect(policy.deliveryEnabled).toBe(false);
+    expect(policy.passwordResetEnabled).toBe(false);
+  });
+  it('requires verification again when moving from testing to email delivery', () => {
+    const policy = getEmailPolicy({ VERCEL: '1', EMAIL_DELIVERY: 'resend' });
+    expect(policy.testingMode).toBe(false);
+    expect(policy.requireVerification).toBe(true);
+  });
   it('keeps production verification mandatory while closing signup and reset', () => {
     const policy = getEmailPolicy({ VERCEL: '1', EMAIL_DELIVERY: 'disabled' });
     expect(policy.requireVerification).toBe(true);
@@ -35,7 +48,7 @@ describe('deferred email authentication', () => {
   });
   it('rejects invalid configuration rather than changing authentication behavior', () => {
     expect(() => getEmailPolicy({ VERCEL: '1', EMAIL_DELIVERY: 'false' })).toThrow(
-      'EMAIL_DELIVERY must be resend or disabled.',
+      'EMAIL_DELIVERY must be resend, disabled, or test.',
     );
   });
 });

@@ -27,7 +27,7 @@ export function validateProductionConfig(env) {
   try {
     deliveryEnabled = getEmailPolicy({ ...env, VERCEL: '1' }).deliveryEnabled;
   } catch {
-    errors.push('EMAIL_DELIVERY must be resend or disabled.');
+    errors.push('EMAIL_DELIVERY must be resend, disabled, or test.');
   }
   const keys = deliveryEnabled
     ? [...requiredProductionKeys, 'RESEND_API_KEY', 'EMAIL_FROM']

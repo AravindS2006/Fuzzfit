@@ -1,6 +1,6 @@
 # Deploy Fuzzfit on Vercel and LiveKit Cloud
 
-The workspace is linked to `aravinds2006s-projects/fuzzfit`, project `prj_m5uOzEvrg5TZ44AKN2CJ2jRJlERK`. Its assigned app domain is `fuzzfit.vercel.app`. The private GitHub repository is connected and pushes trigger remote builds. All nine core production keys are present and `EMAIL_DELIVERY=disabled` defers email; service connectivity and launch checks remain separate from configuration validation. Configure secrets directly in the providers rather than sending them in chat.
+The workspace is linked to `aravinds2006s-projects/fuzzfit`, project `prj_m5uOzEvrg5TZ44AKN2CJ2jRJlERK`. Its assigned app domain is `fuzzfit.vercel.app`. The private GitHub repository is connected and pushes trigger remote builds. All nine core production keys are present; `EMAIL_DELIVERY=test` enables operator signup while deferring email. Service connectivity and launch checks remain separate from configuration validation. Configure secrets directly in the providers rather than sending them in chat.
 
 The private auth and cleanup secrets, exact app origin, PostgreSQL provider, and LiveKit keys have been configured for Production. Node 22.x, the guarded build command, and staged domain assignment are configured. Live service checks remain pending. See `.env.production.example` for the production template.
 
@@ -42,13 +42,15 @@ Test coach and trainee accounts on two physical devices over separate networks. 
 
 ## 3. Identity and email
 
-Set a unique random `BETTER_AUTH_SECRET` of at least 32 characters and the exact HTTPS `BETTER_AUTH_URL`. Production verification is enabled when Vercel runs the application. Configure Resend using a verified sending domain and `RESEND_API_KEY`/`EMAIL_FROM`; test verification and password-reset delivery. Invite links are deliberately generated for manual sharing and are bound to the invited email address.
+Set a unique random `BETTER_AUTH_SECRET` of at least 32 characters and the exact HTTPS `BETTER_AUTH_URL`. Production verification is required unless the operator explicitly selects testing mode. Configure Resend using a verified sending domain and `RESEND_API_KEY`/`EMAIL_FROM`; test verification and password-reset delivery. Invite links are generated for manual sharing and require both their secret link and the matching invited email address.
 
 The two generated secrets are independent and stored as sensitive Production variables. The app origin is `https://fuzzfit.vercel.app` unless a custom domain is explicitly configured later.
 
-The owner has completed Resend signup and has asked to defer email configuration until the client's domain requirements are known. Set `EMAIL_DELIVERY=disabled` in Production. This allows the production build without `EMAIL_FROM` or `RESEND_API_KEY`. Existing mail credentials are ignored, no mail callbacks are installed, and production signup and new password-reset requests are closed in both the UI and authentication API. Existing verified accounts can still sign in; unverified accounts remain rejected. The demo and local camera practice can be deployed while client onboarding waits for a verified sender. Do not insert dummy sender values or turn off email ownership verification.
+The owner has completed Resend signup and has requested two-role testing before purchasing a domain. Set `EMAIL_DELIVERY=test` in Production and redeploy. Builds do not require `EMAIL_FROM` or `RESEND_API_KEY`. Dormant mail credentials are ignored and no mail callbacks are installed. Signup and sign-in work with unverified accounts; passwords must be saved because email recovery is unavailable. The login page visibly labels testing mode. Account records remain unverified, and invitation secrecy, membership checks, password rules, and rate limits remain enforced. Use this mode for operator testing, not verified client identity. See [TESTING_GUIDE.md](TESTING_GUIDE.md).
 
-When the domain is available, add it to Resend (a sending subdomain is suitable), publish the exact DNS records Resend provides, and wait for verified status. Create a domain-scoped sending key and add `RESEND_API_KEY` plus a sender such as `Fuzzfit <hello@your-verified-domain>` in Vercel Production. Set `EMAIL_DELIVERY=resend` and redeploy to enable signup, verification email, and password reset. Test actual delivery before opening onboarding. Unspecified production delivery mode defaults to `resend`, so missing mail credentials still fail the build unless deferral is explicit. A Vercel subdomain does not give ownership of `vercel.app` DNS. Resend's test sender has recipient restrictions and is not a public onboarding solution. [Resend domain documentation](https://resend.com/docs/dashboard/domains/introduction).
+Use `EMAIL_DELIVERY=disabled` if signup must be closed instead. It preserves verified-account sign-in and rejects unverified accounts even if they have an existing testing session. Both modes defer email; only `test` permits unverified signup and login. Do not use dummy sender values.
+
+When the domain is available, add it to Resend (a sending subdomain is suitable), publish the exact DNS records Resend provides, and wait for verified status. Create a domain-scoped sending key and add `RESEND_API_KEY` plus a sender such as `Fuzzfit <hello@your-verified-domain>` in Vercel Production. Set `EMAIL_DELIVERY=resend` and redeploy to enable verification email and password reset. Existing testing accounts must verify: password sign-in sends a verification link, and their unverified sessions lose access to protected APIs. Test actual delivery before opening client onboarding. Unspecified production delivery mode defaults to `resend`, so missing mail credentials still fail the build unless deferral is explicit. A Vercel subdomain does not give ownership of `vercel.app` DNS. Resend's test sender has recipient restrictions and is not a public onboarding solution. [Resend domain documentation](https://resend.com/docs/dashboard/domains/introduction).
 
 ## 4. Required production environment
 
@@ -61,7 +63,7 @@ When the domain is available, add it to Resend (a sending subdomain is suitable)
 | `BETTER_AUTH_URL` | Exact HTTPS app origin |
 | `LIVEKIT_URL` | LiveKit secure websocket endpoint |
 | `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | Server-side LiveKit credentials |
-| `EMAIL_DELIVERY=disabled` or `resend` | Explicit email deferral or delivery |
+| `EMAIL_DELIVERY=test`, `disabled`, or `resend` | Operator testing, closed signup, or verified email delivery |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Required only when delivery mode is `resend` |
 | `CRON_SECRET` | Protected scheduled cleanup |
 

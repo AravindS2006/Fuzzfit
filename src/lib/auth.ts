@@ -32,6 +32,7 @@ export const auth = betterAuth({
   emailVerification: emailPolicy.deliveryEnabled
     ? {
         sendOnSignUp: true,
+        sendOnSignIn: true,
         sendVerificationEmail: async ({ user, url }) => {
           await sendMail(
             user.email,
@@ -58,6 +59,7 @@ export const auth = betterAuth({
       '/sign-in/email': { window: 60, max: 8 },
       '/sign-up/email': { window: 60, max: 5 },
       '/request-password-reset': { window: 60, max: 3 },
+      '/send-verification-email': { window: 60, max: 3 },
     },
   },
 });

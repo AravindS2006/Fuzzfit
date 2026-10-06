@@ -2,7 +2,7 @@ import 'server-only';
 import { headers } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
-import { auth } from './auth';
+import { auth, emailPolicy } from './auth';
 import { db } from './db';
 export class ApiError extends Error {
   constructor(
@@ -17,6 +17,8 @@ export async function requireUser() {
   if (!session) throw new ApiError(401, 'Please sign in to continue.');
   const user = await db.user.findUnique({ where: { id: session.user.id } });
   if (!user) throw new ApiError(401, 'Your session has expired.');
+  if (emailPolicy.requireVerification && !user.emailVerified)
+    throw new ApiError(401, 'Please verify your email, then sign in to continue.');
   return user;
 }
 export function checkOrigin(request: Request) {

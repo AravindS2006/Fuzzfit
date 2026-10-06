@@ -3,12 +3,14 @@
  */
 export function getEmailPolicy(env) {
   const mode = env.EMAIL_DELIVERY ?? (env.VERCEL === '1' ? 'resend' : 'disabled');
-  if (mode !== 'resend' && mode !== 'disabled')
-    throw new Error('EMAIL_DELIVERY must be resend or disabled.');
+  if (!['resend', 'disabled', 'test'].includes(mode))
+    throw new Error('EMAIL_DELIVERY must be resend, disabled, or test.');
   const deliveryEnabled = mode === 'resend';
-  const requireVerification = env.VERCEL === '1';
+  const testingMode = mode === 'test';
+  const requireVerification = env.VERCEL === '1' && !testingMode;
   return {
     mode,
+    testingMode,
     deliveryEnabled,
     requireVerification,
     signupEnabled: !requireVerification || deliveryEnabled,

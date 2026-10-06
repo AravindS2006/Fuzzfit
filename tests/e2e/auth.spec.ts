@@ -12,7 +12,7 @@ test('a real coach account can onboard and persist a workout plan', async ({ pag
   const db = new PrismaClient();
   try {
     await page.goto('/login');
-    await page.getByRole('button', { name: 'Join the movement' }).click();
+    await page.getByRole('button', { name: 'Create account', exact: true }).click();
     await page.getByLabel('Your name', { exact: true }).fill('Browser Coach');
     await page.getByLabel('Email address').fill(email);
     await page.getByLabel('Password', { exact: true }).fill('Local-Integration-Only-12345');
@@ -84,7 +84,7 @@ test('a trainee follows an invitation through signup, onboarding, enrollment, an
     const inviteUrl = await coach.getByLabel('Invitation link').inputValue();
     await coach.getByRole('button', { name: 'Close dialog' }).click();
     await trainee.goto(inviteUrl);
-    await trainee.getByRole('button', { name: 'Join the movement' }).click();
+    await trainee.getByRole('button', { name: 'Create account', exact: true }).click();
     await trainee.getByLabel('Your name', { exact: true }).fill('Journey Trainee');
     await trainee.getByLabel('Email address').fill(traineeEmail);
     await trainee.getByLabel('Password', { exact: true }).fill('Local-Integration-Only-12345');

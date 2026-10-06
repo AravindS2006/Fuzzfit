@@ -7,6 +7,7 @@ export default async function LoginPage() {
   return (
     <Suspense fallback={<div className="page-loading">Loading…</div>}>
       <AuthForm
+        testingMode={emailPolicy.testingMode}
         signupEnabled={emailPolicy.signupEnabled}
         passwordResetEnabled={emailPolicy.passwordResetEnabled}
       />

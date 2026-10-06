@@ -1,6 +1,6 @@
 # Verification and release status
 
-Prepared 6 October 2026. This report distinguishes locally tested behavior from externally dependent release gates. The application is a functioning local pilot with Vercel/PostgreSQL and LiveKit Cloud integration code. It has not been deployed or certified for public production use.
+Prepared 6 October 2026. This report distinguishes locally tested behavior from externally dependent release gates. The application is deployed at `fuzzfit.vercel.app` for operator testing with Vercel/PostgreSQL and LiveKit Cloud integration code. Public login and database health respond successfully; full external service, real-device, and public-launch acceptance remain pending.
 
 ## Local checks
 
@@ -8,8 +8,9 @@ Prepared 6 October 2026. This report distinguishes locally tested behavior from 
 | --- | --- |
 | Optimized build | Next.js build, TypeScript compilation, route generation, pinned model/WASM preparation |
 | Detector and input tests | 20 passing Vitest cases: squat, push-up, curl, plank, confidence/geometry gates, rep phase stability, aspect correction, tracking loss, pause, hold timing, invalid inputs |
-| Production configuration and email policy tests | 26 passing cases: remote PostgreSQL URL requirements, secure/exact origins, missing services, independent strong secrets, template/write-only placeholders, sender validation, partial billing, secret-safe errors, explicit email deferral, and retained production verification. Total: 46 unit tests |
+| Production configuration and email policy tests | 29 passing cases: remote PostgreSQL URL requirements, secure/exact origins, missing services, independent strong secrets, template/write-only placeholders, sender validation, partial billing, secret-safe errors, explicit email deferral, testing signup, and restored production verification. Total: 49 unit tests |
 | Deferred-email authentication | `npm run test:email-disabled` uses a unique disposable SQLite database and separate server: rejects signup/reset requests, creates no account/reset token, rejects unverified sign-in, permits an existing verified account/session, and checks the login page hides unavailable actions |
+| Testing signup and both roles | 28 passing checks: `npm run test:signup` runs the built app with `VERCEL=1` and explicit testing mode on a disposable SQLite database: coach/trainee signup and valid sessions, retained unverified state, one-time role setup, secret invite acceptance, class scheduling/control, personal cue delivery, unavailable recovery, visible signup, and rejection of old testing sessions when verification is restored |
 | API integration | 39 passing checks with actual database-backed auth sessions: onboarding, email-bound invites, plan/class ownership, enrollment, privacy scopes, lifecycle, monotonic metrics, stale revisions, origin rejection, export, health, protected cleanup |
 | Browser journeys | 6 passing Edge/Playwright tests: sample navigation/edit/schedule/messages/control, mobile layout, permission denial, actual worker/model initialization with simulated camera, real coach signup/plan persistence, invited trainee signup/onboarding/enrollment/help/private-cue delivery/completion in separate contexts |
 | Accessibility | 17 scanned page/dialog/populated studio/mobile states plus authenticated trainee onboarding and private-cue views; zero automated WCAG-tagged axe violations after fixing contrast, dialog naming, and keyboard-safe setup. Public-state report: `accessibility-report.json` |

@@ -19,10 +19,10 @@ Open `http://localhost:3000`. Setup creates a private `.env` with a random auth 
 - `/demo` — isolated illustrative studio. All people/history are sample data; edits exist only in that page session. Refresh resets them. No demonstration identity can access protected APIs.
 - `/demo?view=practice` — real local camera inference; frames stay on the device.
 - `/login` — sign up or sign in to your actual workspace.
-- `/app` — authenticated account, onboarding and studio. Local accounts can sign in without email verification. Vercel production requires verified email.
+- `/app` — authenticated account, onboarding and studio. Local accounts and explicitly selected testing accounts can sign in without email verification. Production email delivery requires verified email.
 - `/studio/<id>` — membership-protected session room.
 
-Email can be deferred on Vercel with `EMAIL_DELIVERY=disabled`. The app builds without a sending domain, but new production signup and reset-email requests are unavailable; existing verified accounts can still sign in. Local disposable signup remains available. To enable onboarding later, configure Resend with a verified domain, set `EMAIL_DELIVERY=resend`, and redeploy. The login page explains unavailable actions rather than offering buttons that fail.
+For operator testing before purchasing a sending domain, set Vercel Production `EMAIL_DELIVERY=test` and redeploy. The login page offers **Create account**, signs new users in immediately, and explains that emails are unverified and email recovery is unavailable. Accounts retain `emailVerified=false`; use your own addresses and save your passwords. `EMAIL_DELIVERY=disabled` closes production signup/reset while allowing existing verified accounts. The default production mode is `resend`, which requires a verified sending domain and mail credentials. See the [two-account testing guide](docs/TESTING_GUIDE.md).
 
 Create a coach account, then a trainee account in a second browser profile. The coach creates an invitation for the trainee's exact email and shares its link manually. The trainee accepts it; the coach can then enroll that trainee when scheduling a session. Camera practice needs no video service. Group video needs LiveKit credentials.
 
@@ -39,6 +39,7 @@ npm run test:e2e
 npm run test:a11y
 # Requires the built app; starts an isolated server/database on port 3001:
 npm run test:email-disabled
+npm run test:signup
 ```
 
 The browser test configuration uses an installed Microsoft Edge. Change the channel or install Playwright Chromium if Edge is unavailable. The worker test uses a simulated camera and never accesses a physical camera. API/browser integration accounts use `example.test` emails and are removed afterward. Use a dedicated local test database. The accessibility scan covers 17 page, dialog, populated studio, and mobile states and writes `docs/accessibility-report.json`; the real trainee journey also checks its private-cue studio view. Automated checks do not establish WCAG conformance. On Windows, stop the dev server before `npm run build` or Prisma generation so the query engine DLL is not locked.
@@ -55,6 +56,7 @@ When connected to a class, the trainee analyzes the LiveKit local camera track r
 
 - [Research and implementation plan](docs/IMPLEMENTATION_PLAN.md)
 - [Vercel and LiveKit deployment](docs/DEPLOYMENT.md)
+- [Test as a coach and trainee](docs/TESTING_GUIDE.md)
 - [Review of the proposed pose implementation](docs/PROPOSAL_REVIEW.md)
 - [Release status and verification](docs/VERIFICATION.md)
 - [Security, retention, and operations](docs/OPERATIONS.md)

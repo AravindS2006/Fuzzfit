@@ -28,6 +28,16 @@ describe('production deployment guard', () => {
       }),
     ).toEqual([]);
   });
+  it('allows explicitly selected testing signup without mail credentials', () => {
+    expect(
+      validateProductionConfig({
+        ...valid,
+        EMAIL_DELIVERY: 'test',
+        EMAIL_FROM: undefined,
+        RESEND_API_KEY: undefined,
+      }),
+    ).toEqual([]);
+  });
   it('ignores dormant mail credentials when delivery is explicitly disabled', () => {
     expect(
       validateProductionConfig({
@@ -46,7 +56,7 @@ describe('production deployment guard', () => {
   });
   it('rejects unknown delivery modes rather than silently disabling email', () => {
     expect(validateProductionConfig({ ...valid, EMAIL_DELIVERY: 'disable' })).toContain(
-      'EMAIL_DELIVERY must be resend or disabled.',
+      'EMAIL_DELIVERY must be resend, disabled, or test.',
     );
   });
   it('reports missing services using key names only', () => {
