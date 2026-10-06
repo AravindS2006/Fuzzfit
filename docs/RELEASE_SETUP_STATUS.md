@@ -12,7 +12,7 @@ Checked 6 October 2026. **The application is deployed at fuzzfit.vercel.app for 
 | Vercel Git connection | Existing project connected to `AravindS2006/Fuzzfit`; Production Branch is `master` |
 | Auth and cleanup | Independent generated secrets stored as sensitive Production variables; origin and PostgreSQL provider set |
 | PostgreSQL | Dedicated `fuzzfit-production` Neon Free resource, Singapore, Better Auth retained, connected only to Production; pooled URL and DIRECT_URL configured |
-| Migration | `20261006000000_init` applied; basic read-only connectivity/auth/class/rate-limit queries pass |
+| Migration and account flow | `20261006000000_init` applied; basic connectivity plus 20 live signup/session/role/invite/scheduling checks pass; temporary verification accounts and their related records were removed |
 | LiveKit Cloud | Three Production values are present; service connectivity, automatic-room-creation settings and real device checks remain unverified |
 | Email | Resend signup completed; `EMAIL_DELIVERY=test` selected for operator testing without a domain. Signup/sign-in enabled, email addresses remain unverified, and mail delivery/recovery are deferred |
 | Required app keys | Nine core keys are present plus explicit email deferral; RESEND_API_KEY and EMAIL_FROM are needed only when EMAIL_DELIVERY=resend |
