@@ -121,12 +121,30 @@ test('a trainee follows an invitation through signup, onboarding, enrollment, an
       .getByRole('button', { name: 'Schedule session', exact: true })
       .click();
     await coach.getByRole('button', { name: 'Open studio', exact: true }).click();
+    const startResponsePromise = coach.waitForResponse((response) => {
+      if (!response.url().endsWith('/api/command') || response.request().method() !== 'POST')
+        return false;
+      const command = response.request().postDataJSON();
+      return command?.action === 'classControl' && command.control === 'start';
+    });
     await coach.getByRole('button', { name: 'Start class', exact: true }).click();
+    const startResponse = await startResponsePromise;
+    expect(startResponse.status(), JSON.stringify(await startResponse.json())).toBe(200);
+    await expect(coach.getByRole('button', { name: 'End session', exact: true })).toBeVisible();
     await trainee.getByRole('link', { name: 'Sessions', exact: true }).click();
     await expect(trainee.getByText('A shared journey', { exact: true })).toBeVisible();
     await trainee.getByRole('button', { name: 'Open studio', exact: true }).click();
     await expect(trainee.getByRole('button', { name: 'Enable camera' })).toBeVisible();
-    await expect(trainee.getByRole('button', { name: 'Join live video' })).toBeDisabled();
+    const videoButton = trainee.getByRole('button', { name: 'Join live video', exact: true });
+    await expect(videoButton).toBeVisible();
+    const workspace = await coachContext.request.get('http://localhost:3000/api/workspace');
+    expect(workspace.ok()).toBe(true);
+    if ((await workspace.json()).services.video) {
+      await videoButton.click();
+      const consentDialog = trainee.getByRole('dialog');
+      await expect(consentDialog.getByRole('button', { name: 'Join live video' })).toBeDisabled();
+      await consentDialog.getByRole('button', { name: 'Close dialog' }).click();
+    } else await expect(videoButton).toBeDisabled();
     await trainee.getByRole('button', { name: 'Ask my coach for help' }).click();
     await expect(coach.getByText('Help requested', { exact: true })).toBeVisible({
       timeout: 10000,
