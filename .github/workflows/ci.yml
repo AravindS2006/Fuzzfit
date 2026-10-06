@@ -35,3 +35,10 @@ jobs:
         run: npm run test:email-disabled
       - name: Testing signup and both roles
         run: npm run test:signup
+      - name: Preserve failed browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-diagnostics
+          path: test-results/
+          retention-days: 3

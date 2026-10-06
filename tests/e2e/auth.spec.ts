@@ -43,6 +43,68 @@ test('a real coach account can onboard and persist a workout plan', async ({ pag
   }
 });
 
+test('session controls wait for delayed client scripts before accepting a click', async ({
+  page,
+}) => {
+  await page.context().setExtraHTTPHeaders({ 'x-forwarded-for': testAddress() });
+  const email = `hydration-coach-${Date.now()}@example.test`;
+  const db = new PrismaClient();
+  let releaseScripts!: () => void;
+  const scriptsReady = new Promise<void>((resolve) => {
+    releaseScripts = resolve;
+  });
+  const headers = { Origin: 'http://localhost:3000' };
+  try {
+    const signup = await page.request.post('http://localhost:3000/api/auth/sign-up/email', {
+      headers,
+      data: { name: 'Loading Coach', email, password: 'Local-Integration-Only-12345' },
+    });
+    expect(signup.ok()).toBe(true);
+    const setup = await page.request.post('http://localhost:3000/api/command', {
+      headers,
+      data: { action: 'onboard', name: 'Loading Coach', role: 'coach', adult: true },
+    });
+    expect(setup.ok()).toBe(true);
+    const scheduled = await page.request.post('http://localhost:3000/api/command', {
+      headers,
+      data: {
+        action: 'createClass',
+        title: 'Loading rehearsal',
+        startsAt: new Date(Date.now() + 3600000).toISOString(),
+        duration: 30,
+        capacity: 2,
+        participantIds: [],
+      },
+    });
+    expect(scheduled.ok()).toBe(true);
+    const session = await scheduled.json();
+    await page.route('**/_next/static/**/*.js', async (route) => {
+      await scriptsReady;
+      await route.continue();
+    });
+    await page.goto(`/studio/${session.id}`, { waitUntil: 'commit' });
+    await expect(page.locator('.live-studio')).toBeVisible();
+    await expect(
+      page
+        .getByRole('button', { name: 'Start class', includeHidden: true })
+        .click({ timeout: 500 }),
+    ).rejects.toThrow(/Timeout/);
+    const beforeReady = await page.request.get(`http://localhost:3000/api/classes/${session.id}`);
+    expect((await beforeReady.json()).status).toBe('scheduled');
+    releaseScripts();
+    await page.getByRole('button', { name: 'Start class', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'End session', exact: true })).toBeVisible();
+  } finally {
+    releaseScripts();
+    const user = await db.user.findUnique({ where: { email } });
+    if (user) {
+      await db.auditEvent.deleteMany({ where: { actorId: user.id } });
+      await db.user.delete({ where: { id: user.id } });
+    }
+    await db.$disconnect();
+  }
+});
+
 test('a trainee follows an invitation through signup, onboarding, enrollment, and class completion', async ({
   browser,
 }) => {
@@ -121,12 +183,15 @@ test('a trainee follows an invitation through signup, onboarding, enrollment, an
       .getByRole('button', { name: 'Schedule session', exact: true })
       .click();
     await coach.getByRole('button', { name: 'Open studio', exact: true }).click();
-    const startResponsePromise = coach.waitForResponse((response) => {
-      if (!response.url().endsWith('/api/command') || response.request().method() !== 'POST')
-        return false;
-      const command = response.request().postDataJSON();
-      return command?.action === 'classControl' && command.control === 'start';
-    });
+    const startResponsePromise = coach.waitForResponse(
+      (response) => {
+        if (!response.url().endsWith('/api/command') || response.request().method() !== 'POST')
+          return false;
+        const command = response.request().postDataJSON();
+        return command?.action === 'classControl' && command.control === 'start';
+      },
+      { timeout: 15000 },
+    );
     await coach.getByRole('button', { name: 'Start class', exact: true }).click();
     const startResponse = await startResponsePromise;
     expect(startResponse.status(), JSON.stringify(await startResponse.json())).toBe(200);
@@ -170,8 +235,13 @@ test('a trainee follows an invitation through signup, onboarding, enrollment, an
       trainee.getByRole('heading', { name: 'That’s another step forward.' }),
     ).toBeVisible({ timeout: 10000 });
   } finally {
-    await coachContext.close();
-    await traineeContext.close();
+    for (const context of [coachContext, traineeContext]) {
+      try {
+        await context.close();
+      } catch {
+        // A timed-out test may already have closed its contexts. Preserve the original failure.
+      }
+    }
     const users = await db.user.findMany({
       where: { email: { in: [coachEmail, traineeEmail] } },
       select: { id: true },

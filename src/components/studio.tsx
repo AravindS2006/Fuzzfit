@@ -58,6 +58,7 @@ export function Studio({
   onDemoControl?: (c: Record<string, unknown>) => Promise<Record<string, unknown>>;
 }) {
   const [item, setItem] = useState(initialClass),
+    [hydrated, setHydrated] = useState(false),
     [messages, setMessages] = useState<MessageView[]>([]),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
@@ -87,6 +88,7 @@ export function Studio({
   current.current = item;
   useEffect(() => {
     mounted.current = true;
+    setHydrated(true);
     return () => {
       mounted.current = false;
       joinGeneration.current++;
@@ -398,7 +400,7 @@ export function Studio({
     .reverse()
     .find((m) => m.kind === 'cue' && (!m.recipientId || m.recipientId === user.id));
   return (
-    <div className="live-studio">
+    <div className="live-studio" inert={!hydrated} aria-busy={!hydrated}>
       <div className="studio-heading">
         <div>
           <span className="eyebrow">
