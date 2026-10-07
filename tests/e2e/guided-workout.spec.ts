@@ -71,14 +71,26 @@ test('guided sets count only after Start, recover between sets, and retain cumul
   });
   try {
     await page.goto('http://localhost:3000/demo?view=practice');
+    await page.getByRole('button', { name: 'Workout settings', exact: true }).click();
     await page.getByLabel('Sets', { exact: true }).fill('2');
     await page.getByLabel('Reps per set').fill('1');
     await page.getByLabel('Rest (seconds)').fill('1');
+    await page.getByRole('button', { name: 'Close dialog' }).click();
     await page.getByRole('button', { name: 'Enable camera' }).click();
     await expect(page.getByText('Pose detected', { exact: true })).toBeVisible();
-    const reps = page.locator('.analysis-strip > div').first().locator('strong');
+    const reps = page.getByTestId('cumulative-reps');
     await expect(reps).toHaveText('00');
     await expect(page.getByRole('button', { name: 'Start set', exact: true })).toBeEnabled();
+    // Positioning and rehearsing before Start must never increase the workout total.
+    await page.evaluate(() => {
+      (window as unknown as { poseAngle: number }).poseAngle = 95;
+    });
+    await page.waitForTimeout(750);
+    await page.evaluate(() => {
+      (window as unknown as { poseAngle: number }).poseAngle = 180;
+    });
+    await page.waitForTimeout(500);
+    await expect(reps).toHaveText('00');
     const axe = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
       .analyze();
@@ -97,7 +109,9 @@ test('guided sets count only after Start, recover between sets, and retain cumul
         (window as unknown as { poseAngle: number }).poseAngle = 180;
       });
       await expect(reps).toHaveText(String(set).padStart(2, '0'));
+      await page.getByRole('button', { name: 'Workout settings', exact: true }).click();
       await expect(page.locator('.set-results tbody tr')).toHaveCount(set);
+      await page.getByRole('button', { name: 'Close dialog' }).click();
     }
     await expect(page.getByText('Workout complete', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Stop local camera analysis' }).click();

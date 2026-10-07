@@ -27,10 +27,14 @@ test('sample studio supports navigation, plan edits, scheduling, and an isolated
   await page.getByRole('link', { name: 'Overview' }).click();
   await page.getByRole('button', { name: 'Open studio', exact: true }).first().click();
   await expect(page.getByText('ILLUSTRATIVE STUDIO PREVIEW')).toBeVisible();
-  await expect(page.getByText('Illustrative feed').first()).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Focus Ava Thompson/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Coach tools', exact: true }).click();
   await page.getByLabel('Coaching cue').fill('Move under control.');
   await page.getByRole('button', { name: 'Send class cue' }).click();
+  await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+  await page.getByRole('button', { name: 'Chat', exact: true }).click();
   await expect(page.getByText('Move under control.', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
   await page.getByRole('button', { name: 'Pause class' }).click();
   await expect(page.getByRole('button', { name: 'Resume' })).toBeVisible();
   expect(errors).toEqual([]);
@@ -68,31 +72,92 @@ test('mobile navigation closes with its close button, backdrop, Escape, and Sett
   );
 });
 
-test('exercise instructions and configurable targets are available before camera permission', async ({
+test('workout settings teach the selected movement and persist without opening the camera', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/demo?view=practice');
-  await expect(page.getByRole('region', { name: 'How to do this exercise' })).toBeVisible();
+  await page.getByRole('button', { name: 'Workout settings', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Workout settings' })).toBeVisible();
   await expect(
     page.getByText('Stand tall, feet about shoulder-width apart.', { exact: false }),
   ).toBeVisible();
   await page.getByLabel('Sets', { exact: true }).fill('2');
   await page.getByLabel('Reps per set').fill('8');
   await page.getByLabel('Rest (seconds)').fill('30');
+  await page.getByRole('button', { name: 'Close dialog' }).click();
+  await expect(page.getByRole('dialog', { name: 'Workout settings' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Start set', exact: true })).toBeDisabled();
+  expect(await page.evaluate(() => document.querySelector('video')?.srcObject === null)).toBe(true);
   await page.reload();
+  await page.getByRole('button', { name: 'Workout settings', exact: true }).click();
   await expect(page.getByLabel('Sets', { exact: true })).toHaveValue('2');
   await expect(page.getByLabel('Reps per set')).toHaveValue('8');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Workout settings' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Workout settings', exact: true })).toBeFocused();
   await page.getByLabel('Exercise to practice').selectOption('plank');
+  await page.getByRole('button', { name: 'Workout settings', exact: true }).click();
   await expect(page.getByLabel('Seconds per set')).toHaveValue('30');
   await expect(
     page.getByText('Only time observed in alignment counts.', { exact: false }),
   ).toBeVisible();
+  await page.getByRole('button', { name: 'Close dialog' }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
 });
+
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 1920, height: 1080 },
+  { width: 3840, height: 2160 },
+]) {
+  test(`coach keeps every trainee on screen while selecting and coaching at ${viewport.width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.goto('/demo?view=studio');
+    const traineeNames = ['Ava Thompson', 'Leo Martinez', 'Mia Chen', 'Noah Williams'];
+    const tiles = traineeNames.map((name) =>
+      page.getByRole('button', { name: new RegExp(`^Focus ${name}`) }),
+    );
+    async function expectGalleryFits() {
+      for (const tile of tiles) {
+        await expect(tile).toBeVisible();
+        const box = await tile.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.x).toBeGreaterThanOrEqual(-1);
+        expect(box!.y).toBeGreaterThanOrEqual(-1);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
+        expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1);
+      }
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      ).toBe(true);
+      const dock = await page.locator('.meeting-dock').boundingBox();
+      expect(dock).not.toBeNull();
+      expect(dock!.y + dock!.height).toBeLessThanOrEqual(viewport.height + 1);
+    }
+    await expectGalleryFits();
+    await tiles[0].click();
+    await expect(tiles[0]).toHaveAttribute('aria-pressed', 'true');
+    await expectGalleryFits();
+    await page.getByRole('button', { name: 'Coach tools', exact: true }).click();
+    await expect(page.getByLabel('Coaching cue')).toBeVisible();
+    await expectGalleryFits();
+    await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
+    await expect(page.getByLabel('Coaching cue')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Coach tools', exact: true })).toBeFocused();
+    await page.getByRole('button', { name: 'Chat', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Session conversation' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog', { name: 'Session conversation' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Chat', exact: true })).toBeFocused();
+    await expectGalleryFits();
+    await expect(page.locator('.meeting-room .exercise-art')).toHaveCount(0);
+  });
+}
 test('camera practice starts only after consented user action and handles denial', async ({
   page,
   context,

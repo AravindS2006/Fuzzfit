@@ -9,6 +9,7 @@ import {
   Play,
   Pause,
   CheckCircle2,
+  Settings2,
 } from 'lucide-react';
 import type { Block, ExerciseId } from '@/lib/types';
 import {
@@ -25,7 +26,30 @@ import {
   normalizeWorkoutConfig,
   type WorkoutConfig,
 } from '@/lib/workout-config';
-import { WorkoutGuide } from './workout-guide';
+import { Modal } from './ui';
+
+const movementSteps: Record<ExerciseId, [string, string, string]> = {
+  squat: [
+    'Stand tall, feet about shoulder-width apart.',
+    'Bend hips and knees, sitting back within a comfortable range.',
+    'Press through your feet and return to standing to complete one rep.',
+  ],
+  pushup: [
+    'Place hands below shoulders and extend your legs. Keep your body in a line.',
+    'Bend your elbows to lower your chest under control.',
+    'Press back to extended arms. Ask your coach about an easier variation if needed.',
+  ],
+  curl: [
+    'Stand tall with your working arm extended and a light weight.',
+    'Bend your elbow toward your shoulder, keeping your upper arm still.',
+    'Lower the weight slowly to the starting position to complete one rep.',
+  ],
+  plank: [
+    'Place forearms on the floor, elbows below shoulders.',
+    'Extend your legs and align your shoulders, hips, and ankles.',
+    'Hold steadily and breathe. Only time observed in alignment counts.',
+  ],
+};
 const empty: Analysis = {
   reps: 0,
   holdSeconds: 0,
@@ -81,6 +105,7 @@ export function CameraAnalyzer({
   const [restUntil, setRestUntil] = useState(0);
   const [restLeft, setRestLeft] = useState(0);
   const [localPaused, setLocalPaused] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const modeRef = useRef<Mode>('setup');
   const configRef = useRef(config);
   const baseline = useRef({ reps: initialReps, seconds: initialHoldSeconds });
@@ -443,114 +468,45 @@ export function CameraAnalyzer({
       localStorage.setItem(`fuzzfit-workout-${exercise}`, JSON.stringify(next));
     } catch {}
   };
+  const cue =
+    paused || localPaused
+      ? 'Tracking paused. Take a moment to reset.'
+      : mode === 'rest'
+        ? 'Rest, breathe, and prepare for your next set.'
+        : mode === 'complete'
+          ? 'Your workout is finished. Open settings to review your sets.'
+          : status === 'off'
+            ? `${definition.instructions[0]} ${definition.instructions[1]}`
+            : status === 'loading'
+              ? 'Preparing pose tracking. Keep your body in view.'
+              : mode === 'setup' && analysis.tracked
+                ? `Ready. Start your set, then ${definition.instructions[2].toLowerCase()}`
+                : analysis.cue;
+  const currentSet = Math.min(completedSets.length + 1, config.sets);
   return (
-    <div className="camera-module">
-      <WorkoutGuide key={exercise} exercise={exercise} compact={mode !== 'setup'} />
-      <section className="workout-setup" aria-label="Workout settings">
-        <div className="workout-setup-title">
-          <strong>Your workout</strong>
-          <span>
-            {block
-              ? 'Targets from your coach’s plan · adjust with your coach'
-              : 'Choose a comfortable target before you start'}
-          </span>
-        </div>
-        <div className="workout-fields">
-          <label>
-            Sets
-            <input
-              type="number"
-              min={1}
-              max={10}
-              value={config.sets}
-              disabled={mode !== 'setup'}
-              onChange={(e) => updateConfig({ sets: Number(e.target.value) })}
-            />
-          </label>
-          <label>
-            {exercise === 'plank' ? 'Seconds per set' : 'Reps per set'}
-            <input
-              type="number"
-              min={1}
-              max={120}
-              value={config.target}
-              disabled={mode !== 'setup'}
-              onChange={(e) => updateConfig({ target: Number(e.target.value) })}
-            />
-          </label>
-          <label>
-            Rest (seconds)
-            <input
-              type="number"
-              min={0}
-              max={300}
-              value={config.rest}
-              disabled={mode !== 'setup'}
-              onChange={(e) => updateConfig({ rest: Number(e.target.value) })}
-            />
-          </label>
-        </div>
-        <details className="tracking-settings">
-          <summary>Adjust tracking with your coach</summary>
-          <p>
-            Use a side view. Choose the visible arm or leg. Joint angles are camera estimates;
-            adjust the endpoints to your coach-approved movement range.
-          </p>
-          <div className="workout-fields">
-            <label>
-              Body side
-              <select
-                value={config.side}
-                disabled={mode !== 'setup'}
-                onChange={(e) => updateConfig({ side: e.target.value as WorkoutConfig['side'] })}
-              >
-                <option value="auto">Automatic</option>
-                <option value="left">Left</option>
-                <option value="right">Right</option>
-              </select>
-            </label>
-            {exercise !== 'plank' && (
-              <>
-                <label>
-                  Extended angle (°)
-                  <input
-                    type="number"
-                    min={130}
-                    max={175}
-                    value={config.topAngle}
-                    disabled={mode !== 'setup'}
-                    onChange={(e) => updateConfig({ topAngle: Number(e.target.value) })}
-                  />
-                </label>
-                <label>
-                  Bent angle (°)
-                  <input
-                    type="number"
-                    min={35}
-                    max={config.topAngle - 25}
-                    value={config.bottomAngle}
-                    disabled={mode !== 'setup'}
-                    onChange={(e) => updateConfig({ bottomAngle: Number(e.target.value) })}
-                  />
-                </label>
-              </>
-            )}
-          </div>
-        </details>
-      </section>
+    <div className="camera-analyzer meeting-analyzer">
       <div className="camera-view">
         <video ref={video} muted playsInline className="camera-video" />
-        <canvas ref={canvas} className="pose-canvas" />
+        <canvas ref={canvas} className="pose-canvas" aria-hidden="true" />
+        <div className="analyzer-topbar">
+          <span className="analyzer-identity">You · {definition.name}</span>
+          <button
+            className="icon-button analyzer-settings-button"
+            title="Workout settings"
+            aria-label="Workout settings"
+            onClick={() => setSettingsOpen(true)}
+          >
+            <Settings2 size={19} />
+          </button>
+        </div>
         {status === 'off' && (
           <div className="camera-placeholder">
             <div className="camera-icon">
-              <ScanLine size={38} />
+              <Camera size={32} />
             </div>
-            <h3>1. Learn the movement. 2. Position your camera.</h3>
+            <h3>Your workout camera</h3>
             <p>
-              {definition.view}
-              <br />
-              Pose analysis runs on your device.
+              {definition.view}. {definition.instructions[0]}
             </p>
             <button
               className="button lime"
@@ -561,9 +517,7 @@ export function CameraAnalyzer({
             >
               <Camera size={17} /> {sessionCamera ? 'Turn on session camera' : 'Enable camera'}
             </button>
-            {sessionCamera && (
-              <p>Join live video first. The same camera is used for your coach and tracking.</p>
-            )}
+            {sessionCamera && <p>Your coach sees the same camera used for tracking.</p>}
           </div>
         )}
         {status === 'loading' && (
@@ -581,113 +535,105 @@ export function CameraAnalyzer({
                   ? 'Pose detected'
                   : 'Position camera'}
             </span>
+            <div
+              className="analysis-strip analyzer-hud"
+              role="group"
+              aria-label="Live workout scores"
+            >
+              <div>
+                <span>{exercise === 'plank' ? 'Hold time' : 'Total reps'}</span>
+                <strong data-testid="cumulative-reps">
+                  {exercise === 'plank'
+                    ? `${analysis.holdSeconds}s`
+                    : String(analysis.reps).padStart(2, '0')}
+                </strong>
+              </div>
+              <div>
+                <span>Form estimate</span>
+                <strong>
+                  {analysis.score === null ? '—' : Math.round(analysis.score)}
+                  <small>{analysis.score === null ? '' : '/100'}</small>
+                </strong>
+              </div>
+              <div>
+                <span>Movement phase</span>
+                <strong className="phase-text">
+                  {paused || localPaused
+                    ? 'Paused'
+                    : mode === 'rest'
+                      ? 'Resting'
+                      : mode === 'complete'
+                        ? 'Complete'
+                        : analysis.phase}
+                </strong>
+              </div>
+            </div>
             <div className="camera-bottom">
-              <span>{definition.name}</span>
+              <span>
+                Set {currentSet} / {config.sets}
+              </span>
               <span>{Math.round(analysis.confidence * 100)}% tracking confidence</span>
             </div>
           </>
         )}
       </div>
-      {error && (
-        <p className="inline-error" role="alert">
-          {error}
-        </p>
-      )}
-      <div className="camera-tools">
-        <span>Local analysis · no recording</span>
-        <div>
-          <button
-            className="button outline small"
-            title={voice ? 'Mute voice & rep sound' : 'Enable voice & rep sound'}
-            aria-label={voice ? 'Mute voice & rep sound' : 'Enable voice & rep sound'}
-            aria-pressed={voice}
-            onClick={() => {
-              setVoice(!voice);
-              voiceRef.current = !voice;
-              if (voice) window.speechSynthesis?.cancel();
-              else {
-                if (window.AudioContext) {
-                  soundContext.current ??= new AudioContext();
-                  void soundContext.current.resume();
+      <div className="analyzer-footer">
+        {error && (
+          <p className="inline-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="cue-card analyzer-cue">
+          <ScanLine size={19} aria-hidden="true" />
+          <p role="status">{cue}</p>
+        </div>
+        <section className="set-progress analyzer-progress" aria-label="Set progress">
+          <div>
+            <strong>
+              {mode === 'complete' ? 'Workout complete' : `Set ${currentSet} of ${config.sets}`}
+            </strong>
+            <span>
+              {mode === 'setup'
+                ? `${config.target} ${exercise === 'plank' ? 'seconds' : 'reps'} · Start when ready`
+                : mode === 'rest'
+                  ? `Recovery · ${restLeft}s remaining`
+                  : mode === 'complete'
+                    ? `${completedSets.length} sets finished`
+                    : `${progress} / ${config.target} ${exercise === 'plank' ? 'seconds' : 'reps'}`}
+            </span>
+          </div>
+          <progress
+            value={Math.min(progress, config.target)}
+            max={config.target}
+            aria-label="Current set target"
+          />
+          <div className="set-actions">
+            {(mode === 'setup' || mode === 'rest') && (
+              <button
+                className="button lime"
+                disabled={
+                  paused ||
+                  status !== 'ready' ||
+                  !analysis.tracked ||
+                  (mode === 'rest' && restLeft > 0)
                 }
-                announce(analysis.cue, true);
-              }
-            }}
-          >
-            {voice ? <Volume2 size={18} /> : <VolumeX size={18} />}
-            {voice ? 'Mute voice & rep sound' : 'Enable voice & rep sound'}
-          </button>
-          {status !== 'off' && (
-            <button
-              className="icon-button"
-              title="Stop local camera analysis"
-              aria-label="Stop local camera analysis"
-              onClick={() => {
-                stop();
-                setStatus('off');
-                setAnalysis({
-                  ...empty,
-                  reps: tally.current.reps,
-                  holdSeconds: Math.floor(tally.current.holdMs / 1000),
-                });
-              }}
-            >
-              <CameraOff size={18} />
-            </button>
-          )}
-        </div>
-      </div>
-      <section className="set-progress" aria-label="Set progress">
-        <div>
-          <strong>
-            {mode === 'complete'
-              ? 'Workout complete'
-              : `Set ${Math.min(completedSets.length + 1, config.sets)} of ${config.sets}`}
-          </strong>
-          <span>
-            {mode === 'setup'
-              ? 'Camera ready? Read the steps above, then start your set.'
-              : mode === 'rest'
-                ? `Recovery · ${restLeft}s remaining`
-                : mode === 'complete'
-                  ? 'Your sets are shown below.'
-                  : `${progress} / ${config.target} ${exercise === 'plank' ? 'seconds' : 'reps'}`}
-          </span>
-        </div>
-        <progress
-          value={Math.min(progress, config.target)}
-          max={config.target}
-          aria-label="Current set target"
-        />
-        <div className="set-actions">
-          {(mode === 'setup' || mode === 'rest') && (
-            <button
-              className="button lime"
-              disabled={
-                paused ||
-                status !== 'ready' ||
-                !analysis.tracked ||
-                (mode === 'rest' && restLeft > 0)
-              }
-              onClick={startSet}
-            >
-              <Play size={17} />
-              {mode === 'rest' ? 'Start next set' : 'Start set'}
-            </button>
-          )}
-          {mode === 'rest' && restLeft > 0 && (
-            <button
-              className="button outline"
-              onClick={() => {
-                setRestUntil(Date.now());
-                setRestLeft(0);
-              }}
-            >
-              Skip rest
-            </button>
-          )}
-          {mode === 'active' && (
-            <>
+                onClick={startSet}
+              >
+                <Play size={17} /> {mode === 'rest' ? 'Start next set' : 'Start set'}
+              </button>
+            )}
+            {mode === 'rest' && restLeft > 0 && (
+              <button
+                className="button outline small"
+                onClick={() => {
+                  setRestUntil(Date.now());
+                  setRestLeft(0);
+                }}
+              >
+                Skip rest
+              </button>
+            )}
+            {mode === 'active' && (
               <button
                 className="button outline"
                 disabled={paused}
@@ -699,124 +645,263 @@ export function CameraAnalyzer({
                 {localPaused ? <Play size={16} /> : <Pause size={16} />}
                 {localPaused ? 'Resume set' : 'Pause set'}
               </button>
-              <button className="button outline" onClick={() => finishSet(analysis)}>
-                Finish set early
+            )}
+            {mode === 'complete' && (
+              <button
+                className="button lime"
+                onClick={() => {
+                  completedRef.current = [];
+                  setCompletedSets([]);
+                  modeRef.current = 'setup';
+                  setMode('setup');
+                  baseline.current = {
+                    reps: tally.current.reps,
+                    seconds: Math.floor(tally.current.holdMs / 1000),
+                  };
+                }}
+              >
+                New workout
               </button>
-            </>
-          )}
-          {mode === 'complete' && (
+            )}
+          </div>
+        </section>
+        <div className="analyzer-tools">
+          <span>Pose analysis stays on your device</span>
+          <div>
             <button
-              className="button lime"
+              className="icon-button"
+              title={voice ? 'Mute voice & rep sound' : 'Enable voice & rep sound'}
+              aria-label={voice ? 'Mute voice & rep sound' : 'Enable voice & rep sound'}
+              aria-pressed={voice}
               onClick={() => {
-                completedRef.current = [];
-                setCompletedSets([]);
-                modeRef.current = 'setup';
-                setMode('setup');
-                baseline.current = {
-                  reps: tally.current.reps,
-                  seconds: Math.floor(tally.current.holdMs / 1000),
-                };
+                setVoice(!voice);
+                voiceRef.current = !voice;
+                if (voice) window.speechSynthesis?.cancel();
+                else {
+                  if (window.AudioContext) {
+                    soundContext.current ??= new AudioContext();
+                    void soundContext.current.resume();
+                  }
+                  announce(analysis.cue, true);
+                }
               }}
             >
-              New workout
+              {voice ? <Volume2 size={18} /> : <VolumeX size={18} />}
             </button>
-          )}
-        </div>
-      </section>
-      <div className="analysis-strip">
-        <div>
-          <span>{exercise === 'plank' ? 'Hold time' : 'Reps this exercise'}</span>
-          <strong>
-            {exercise === 'plank'
-              ? `${analysis.holdSeconds}s`
-              : String(analysis.reps).padStart(2, '0')}
-          </strong>
-        </div>
-        <div>
-          <span>Form estimate</span>
-          <strong>
-            {analysis.score === null ? '—' : Math.round(analysis.score)}
-            <small>{analysis.score === null ? '' : '/100'}</small>
-          </strong>
-        </div>
-        <div>
-          <span>Movement phase</span>
-          <strong className="phase-text">
-            {paused || localPaused
-              ? 'Paused'
-              : mode === 'rest'
-                ? 'Resting'
-                : mode === 'complete'
-                  ? 'Complete'
-                  : analysis.phase}
-          </strong>
+            {status !== 'off' && (
+              <button
+                className="icon-button"
+                title="Stop local camera analysis"
+                aria-label="Stop local camera analysis"
+                onClick={() => {
+                  stop();
+                  setStatus('off');
+                  setAnalysis({
+                    ...empty,
+                    reps: tally.current.reps,
+                    holdSeconds: Math.floor(tally.current.holdMs / 1000),
+                  });
+                }}
+              >
+                <CameraOff size={18} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
-      <div className="cue-card">
-        <ScanLine size={20} />
-        <div>
-          <span>CAMERA COACH</span>
-          <p role="status">
-            {paused || localPaused
-              ? 'Tracking paused. Take a moment to reset.'
-              : mode === 'rest'
-                ? 'Rest, breathe, and prepare for your next set.'
-                : mode === 'complete'
-                  ? 'Workout finished. Review your progress below.'
-                  : analysis.cue}
-          </p>
-        </div>
-      </div>
-      {mode === 'active' && (
-        <div className="movement-metrics">
-          <span>
-            Last rep range: <b>{analysis.rangeDegrees ? `${analysis.rangeDegrees}°` : '—'}</b>
-          </span>
-          <span>
-            Last rep time:{' '}
-            <b>{analysis.lastRepSeconds ? `${analysis.lastRepSeconds.toFixed(1)}s` : '—'}</b>
-          </span>
-          <span>
-            Joint angle: <b>{analysis.angle === null ? '—' : `${analysis.angle}°`}</b>
-          </span>
-        </div>
+      {settingsOpen && (
+        <Modal title="Workout settings" onClose={() => setSettingsOpen(false)}>
+          <div className="analyzer-settings">
+            <section className="workout-setup" aria-label="Workout targets">
+              <div className="workout-setup-title">
+                <strong>{definition.name}</strong>
+                <span>
+                  {block ? 'Targets from your coach’s plan' : 'Set a comfortable target'}
+                  {mode !== 'setup' && ' · Targets are locked during a workout'}
+                </span>
+              </div>
+              <div className="workout-fields">
+                <label>
+                  Sets
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={config.sets}
+                    disabled={mode !== 'setup'}
+                    onChange={(e) => updateConfig({ sets: Number(e.target.value) })}
+                  />
+                </label>
+                <label>
+                  {exercise === 'plank' ? 'Seconds per set' : 'Reps per set'}
+                  <input
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={config.target}
+                    disabled={mode !== 'setup'}
+                    onChange={(e) => updateConfig({ target: Number(e.target.value) })}
+                  />
+                </label>
+                <label>
+                  Rest (seconds)
+                  <input
+                    type="number"
+                    min={0}
+                    max={300}
+                    value={config.rest}
+                    disabled={mode !== 'setup'}
+                    onChange={(e) => updateConfig({ rest: Number(e.target.value) })}
+                  />
+                </label>
+              </div>
+              <details className="tracking-settings">
+                <summary>Adjust tracking with your coach</summary>
+                <p>
+                  Use a side view and choose your visible arm or leg. Ask your coach to set the
+                  movement range before changing these camera angle estimates.
+                </p>
+                <div className="workout-fields">
+                  <label>
+                    Body side
+                    <select
+                      value={config.side}
+                      disabled={mode !== 'setup'}
+                      onChange={(e) =>
+                        updateConfig({ side: e.target.value as WorkoutConfig['side'] })
+                      }
+                    >
+                      <option value="auto">Automatic</option>
+                      <option value="left">Left</option>
+                      <option value="right">Right</option>
+                    </select>
+                  </label>
+                  {exercise !== 'plank' && (
+                    <>
+                      <label>
+                        Extended angle (°)
+                        <input
+                          type="number"
+                          min={130}
+                          max={175}
+                          value={config.topAngle}
+                          disabled={mode !== 'setup'}
+                          onChange={(e) => updateConfig({ topAngle: Number(e.target.value) })}
+                        />
+                      </label>
+                      <label>
+                        Bent angle (°)
+                        <input
+                          type="number"
+                          min={35}
+                          max={config.topAngle - 25}
+                          value={config.bottomAngle}
+                          disabled={mode !== 'setup'}
+                          onChange={(e) => updateConfig({ bottomAngle: Number(e.target.value) })}
+                        />
+                      </label>
+                      <label>
+                        Minimum rep time (ms)
+                        <input
+                          type="number"
+                          min={500}
+                          max={3000}
+                          step={100}
+                          value={config.minRepMs}
+                          disabled={mode !== 'setup'}
+                          onChange={(e) => updateConfig({ minRepMs: Number(e.target.value) })}
+                        />
+                      </label>
+                    </>
+                  )}
+                </div>
+              </details>
+            </section>
+            <section className="analyzer-instructions" aria-label="How to do this exercise">
+              <h3>Movement & camera setup</h3>
+              <p>
+                {definition.instructions[0]} {definition.instructions[1]} Use bright, even lighting.
+              </p>
+              <ol>
+                {movementSteps[exercise].map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+              <p className="microcopy">
+                Full, controlled movements count after you start a set. Form scores are camera
+                estimates to review with your coach. Stop if a movement causes pain.
+              </p>
+            </section>
+            {mode === 'active' && (
+              <div className="analyzer-live-details">
+                <div className="movement-metrics">
+                  <span>
+                    Last rep range:{' '}
+                    <b>{analysis.rangeDegrees ? `${analysis.rangeDegrees}°` : '—'}</b>
+                  </span>
+                  <span>
+                    Last rep time:{' '}
+                    <b>
+                      {analysis.lastRepSeconds ? `${analysis.lastRepSeconds.toFixed(1)}s` : '—'}
+                    </b>
+                  </span>
+                  <span>
+                    Joint angle: <b>{analysis.angle === null ? '—' : `${analysis.angle}°`}</b>
+                  </span>
+                </div>
+                <button
+                  className="button outline"
+                  onClick={() => {
+                    finishSet(analysis);
+                    setSettingsOpen(false);
+                  }}
+                >
+                  Finish set early
+                </button>
+              </div>
+            )}
+            {!!completedSets.length && (
+              <div className="set-results">
+                <h3>
+                  <CheckCircle2 size={18} /> Your set results
+                </h3>
+                <p className="microcopy">
+                  Set details stay in this page. In a joined class, cumulative reps and form
+                  summaries are saved in Insights.
+                </p>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Set</th>
+                      <th>{exercise === 'plank' ? 'Seconds' : 'Reps'}</th>
+                      <th>Target</th>
+                      <th>Form estimate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {completedSets.map((s) => (
+                      <tr key={s.number}>
+                        <td>{s.number}</td>
+                        <td>{s.amount}</td>
+                        <td>
+                          {s.amount >= config.target ? 'Reached' : `${s.amount} / ${config.target}`}
+                        </td>
+                        <td>{s.score === null ? '—' : `${s.score}/100`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <button
+              className="button lime analyzer-settings-done"
+              onClick={() => setSettingsOpen(false)}
+            >
+              Done
+            </button>
+          </div>
+        </Modal>
       )}
-      {!!completedSets.length && (
-        <div className="set-results">
-          <h3>
-            <CheckCircle2 size={18} /> Your set results
-          </h3>
-          <p className="microcopy">
-            Set details stay in this page. In a joined class, cumulative reps and form summaries are
-            saved in Insights.
-          </p>
-          <table>
-            <thead>
-              <tr>
-                <th>Set</th>
-                <th>{exercise === 'plank' ? 'Seconds' : 'Reps'}</th>
-                <th>Target</th>
-                <th>Form estimate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {completedSets.map((s) => (
-                <tr key={s.number}>
-                  <td>{s.number}</td>
-                  <td>{s.amount}</td>
-                  <td>
-                    {s.amount >= config.target ? 'Reached' : `${s.amount} / ${config.target}`}
-                  </td>
-                  <td>{s.score === null ? '—' : `${s.score}/100`}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <p className="microcopy">
-        Geometry-based estimates, reviewed with your coach. Stop if a movement causes pain.
-      </p>
     </div>
   );
 }

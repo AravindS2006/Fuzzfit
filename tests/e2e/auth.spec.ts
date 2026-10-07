@@ -217,11 +217,33 @@ test('a trainee follows an invitation through signup, onboarding, enrollment, an
       timeout: 10000,
     });
     await coach.getByRole('button', { name: /Journey Trainee/ }).click();
+    await coach.getByRole('button', { name: 'Coach tools', exact: true }).click();
     await coach.getByLabel('Coaching cue').fill('Let’s keep the movement controlled.');
     await coach.getByRole('button', { name: 'Send personal cue' }).click();
+    await coach.getByRole('button', { name: 'Close dialog' }).click();
     await expect(trainee.locator('.human-cue')).toContainText(
       'Let’s keep the movement controlled.',
     );
+    for (const viewport of [
+      { width: 390, height: 844 },
+      { width: 844, height: 390 },
+    ]) {
+      await trainee.setViewportSize(viewport);
+      for (const selector of ['.meeting-analyzer', '.coach-stage', '.meeting-dock']) {
+        const box = await trainee.locator(selector).boundingBox();
+        expect(
+          box,
+          `${selector} is rendered at ${viewport.width}×${viewport.height}`,
+        ).not.toBeNull();
+        expect(box!.x).toBeGreaterThanOrEqual(-1);
+        expect(box!.y).toBeGreaterThanOrEqual(-1);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
+        expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1);
+      }
+      expect(
+        await trainee.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      ).toBe(true);
+    }
     const accessibility = await new AxeBuilder({ page: trainee })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
       .analyze();
@@ -233,9 +255,9 @@ test('a trainee follows an invitation through signup, onboarding, enrollment, an
     ).toEqual([]);
     await coach.getByRole('button', { name: 'End session', exact: true }).click();
     await coach.getByRole('button', { name: 'End session for everyone' }).click();
-    await expect(
-      trainee.getByRole('heading', { name: 'That’s another step forward.' }),
-    ).toBeVisible({ timeout: 10000 });
+    await expect(trainee.getByRole('heading', { name: 'Session complete' })).toBeVisible({
+      timeout: 10000,
+    });
   } finally {
     for (const context of [coachContext, traineeContext]) {
       try {

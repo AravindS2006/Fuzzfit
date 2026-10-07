@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { AccessToken, TrackSource } from 'livekit-server-sdk';
+import { AccessToken } from 'livekit-server-sdk';
 import { z } from 'zod';
 import {
   ApiError,
@@ -9,6 +9,7 @@ import {
   requireClass,
   safeError,
 } from '@/lib/security';
+import { classVideoGrant } from '@/lib/video-grants';
 export async function POST(request: Request) {
   try {
     const user = await requireUser();
@@ -32,15 +33,7 @@ export async function POST(request: Request) {
       name: user.name,
       ttl: '5m',
     });
-    token.addGrant({
-      roomJoin: true,
-      room: `fuzzfit-${item.id}`,
-      canPublish: true,
-      canSubscribe: true,
-      canPublishData: false,
-      canPublishSources: [TrackSource.CAMERA, TrackSource.MICROPHONE],
-      canUpdateOwnMetadata: false,
-    });
+    token.addGrant(classVideoGrant(item.id, item.studio.ownerId === user.id));
     return NextResponse.json(
       { token: await token.toJwt(), url: process.env.LIVEKIT_URL },
       { headers: { 'Cache-Control': 'no-store' } },

@@ -13,26 +13,24 @@ import {
   Play,
   Send,
   Users,
-  Signal,
   Check,
   X,
-  ScanLine,
-  AlertCircle,
+  MessageSquare,
   ShieldCheck,
   LogOut,
   Volume2,
-  Clock3,
   CheckCircle2,
   Settings2,
   SwitchCamera,
   Maximize,
 } from 'lucide-react';
-import type { Room, Participant } from 'livekit-client';
+import type { Room, Participant, Track } from 'livekit-client';
 import type { Analysis } from '@/lib/pose-engine';
 import type { ClassView, MessageView, Person, WorkspaceData } from '@/lib/types';
 import { apiCommand, fetchJson } from '@/lib/client';
 import { exercises, exerciseName } from '@/lib/catalog';
-import { Avatar, EmptyState, ExerciseArt, Modal, SectionTitle } from './ui';
+import { Avatar, EmptyState, Modal } from './ui';
+import { Presentation, ScreenShareButton } from './meeting-presentation';
 import { VideoDevices, type DevicePreferences } from './video-devices';
 const CameraAnalyzer = dynamic(() => import('./camera-analyzer').then((m) => m.CameraAnalyzer), {
   ssr: false,
@@ -82,6 +80,10 @@ export function Studio({
     [connectionState, setConnectionState] = useState('Not connected'),
     [analysisWarning, setAnalysisWarning] = useState('');
   const [devicesOpen, setDevicesOpen] = useState(false);
+  const [coachToolsOpen, setCoachToolsOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [presenting, setPresenting] = useState(false);
+  const meetingRef = useRef<HTMLDivElement>(null);
   const [preferences, setPreferences] = useState<DevicePreferences>({
     cameraId: '',
     microphoneId: '',
@@ -521,450 +523,242 @@ export function Studio({
     );
   const ended = item.status === 'completed' || item.status === 'cancelled';
   const focused = item.participants.find((p) => p.id === focus);
+  const me = item.participants.find((p) => p.id === user.id);
+  const coachParticipant = remote.find((p) => p.identity === item.coachId);
   const lastCue = [...messages]
     .reverse()
     .find((m) => m.kind === 'cue' && (!m.recipientId || m.recipientId === user.id));
+  const count = item.participants.length + 1;
+  const columns = count <= 2 ? 2 : count <= 4 ? 2 : 3;
   return (
-    <div className="live-studio" inert={!hydrated} aria-busy={!hydrated}>
-      <div className="studio-heading">
-        <div>
-          <span className="eyebrow">
-            {demo ? 'ILLUSTRATIVE STUDIO PREVIEW' : 'YOUR LIVE COACHING SPACE'}
-          </span>
-          <h1>{item.title}</h1>
-          <div className="studio-meta">
-            <span className={`pill ${item.status === 'live' ? 'live-pill' : ''}`}>
-              <span className="status-dot" />
-              {demo ? 'Sample class' : item.status}
-            </span>
-            <span>
-              <Users size={15} />
-              {item.participants.length} enrolled
-            </span>
-            <span>
-              <Clock3 size={15} />
-              {String(Math.floor(seconds / 60)).padStart(2, '0')}:
-              {String(seconds % 60).padStart(2, '0')}
-            </span>
-            <span>
-              <Signal size={15} />
-              {demo ? 'Preview only' : connectionState}
-            </span>
-          </div>
-        </div>
+    <div
+      ref={meetingRef}
+      className={`live-studio meeting-room ${coach ? 'coach-meeting' : 'trainee-meeting'}`}
+      inert={!hydrated}
+      aria-busy={!hydrated}
+    >
+      <header className="meeting-header">
         <button
-          className="button outline"
+          className="icon-button"
+          aria-label="Back to sessions"
           onClick={async () => {
             joinGeneration.current++;
             await room.current?.disconnect();
             onExit();
           }}
         >
-          <ArrowLeft size={16} /> Back to sessions
+          <ArrowLeft size={21} />
         </button>
-      </div>
+        <div className="meeting-title">
+          <span>{demo ? 'ILLUSTRATIVE STUDIO PREVIEW' : 'FUZZFIT LIVE'}</span>
+          <h1>{item.title}</h1>
+        </div>
+        <div className="meeting-presence">
+          <span className={`meeting-status ${item.status === 'live' ? 'is-live' : ''}`}>
+            <i />
+            {item.paused ? 'Paused' : item.status}
+          </span>
+          <span>
+            <Users size={15} />
+            {item.participants.length} trainees
+          </span>
+          <time>
+            {String(Math.floor(seconds / 60)).padStart(2, '0')}:
+            {String(seconds % 60).padStart(2, '0')}
+          </time>
+        </div>
+        <div className="meeting-movement">
+          {coach ? (
+            <select
+              aria-label="Current exercise"
+              value={item.exercise}
+              disabled={busy || item.status !== 'live'}
+              onChange={(e) => void control('exercise', e.target.value)}
+            >
+              {exercises.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <strong>{exerciseName(item.exercise)}</strong>
+          )}
+        </div>
+      </header>
       {error && (
-        <p className="inline-error" role="alert">
+        <p className="inline-error meeting-notice" role="alert">
           {error}
+          <button aria-label="Dismiss error" onClick={() => setError('')}>
+            <X size={16} />
+          </button>
         </p>
       )}
       {analysisWarning && (
-        <p className="inline-notice" role="status">
+        <p className="inline-notice meeting-notice" role="status">
           {analysisWarning}
         </p>
       )}
+      {audioBlocked && connected && (
+        <p className="inline-notice meeting-notice" role="status">
+          Class audio is paused by your browser.
+          <button
+            onClick={async () => {
+              try {
+                await room.current?.startAudio();
+                setAudioBlocked(false);
+              } catch {
+                setAudioBlocked(true);
+              }
+            }}
+          >
+            Enable room audio
+          </button>
+        </p>
+      )}
+      {connected && connectionState !== 'connected' && (
+        <p className="inline-notice meeting-notice" role="status">
+          Reconnecting… wait for video and tracking to recover.
+        </p>
+      )}
       {ended ? (
-        <div className="panel session-finished">
-          <CheckCircle2 size={36} />
-          <h2>
-            {item.status === 'completed'
-              ? 'That’s another step forward.'
-              : 'This session was cancelled.'}
-          </h2>
-          <p>
-            {item.status === 'completed'
-              ? 'Your tracked summaries are saved in Insights. Take a moment to recover.'
-              : 'Your coach can schedule another session.'}
-          </p>
+        <div className="session-finished meeting-finished">
+          <CheckCircle2 size={42} />
+          <h2>{item.status === 'completed' ? 'Session complete' : 'Session cancelled'}</h2>
+          <p>Tracked summaries are saved in Insights.</p>
           {coach && item.status === 'completed' && !demo && (
             <button className="button outline" disabled={busy} onClick={() => void control('end')}>
               Retry video room cleanup
             </button>
           )}
           <button className="button lime" onClick={onExit}>
-            Back to my studio
-            <ArrowUpRight size={17} />
+            Back to my studio <ArrowUpRight size={17} />
           </button>
         </div>
       ) : (
         <>
-          <div className="studio-toolbar panel">
-            <div>
-              <span className="eyebrow">CURRENT MOVEMENT</span>
-              {coach ? (
-                <select
-                  aria-label="Current exercise"
-                  value={item.exercise}
-                  disabled={busy || item.status !== 'live'}
-                  onChange={(e) => void control('exercise', e.target.value)}
-                >
-                  {exercises.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.name}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <strong>{exerciseName(item.exercise)}</strong>
-              )}
-            </div>
-            <span className="subtle">
-              {item.paused ? 'Recovery break · tracking paused' : 'Move at a comfortable pace'}
-            </span>
-            <div className="toolbar-actions">
-              {coach && item.status === 'scheduled' && (
-                <button
-                  className="button lime"
-                  disabled={busy}
-                  onClick={() => void control('start')}
-                >
-                  <Play size={16} /> Start class
-                </button>
-              )}
-              {coach && item.status === 'live' && (
-                <>
-                  <button
-                    className="button outline"
-                    disabled={busy}
-                    onClick={() => void control(item.paused ? 'resume' : 'pause')}
-                  >
-                    {item.paused ? <Play size={16} /> : <Pause size={16} />}{' '}
-                    {item.paused ? 'Resume' : 'Pause class'}
-                  </button>
-                  <button className="button danger" onClick={() => setEnding(true)}>
-                    End session
-                  </button>
-                </>
-              )}
-              {!demo && !connected && item.status === 'live' && (
-                <button
-                  className="button dark"
-                  disabled={connecting || !services.video}
-                  onClick={() => setShowConsent(true)}
-                >
-                  <Video size={17} />
-                  {connecting ? 'Connecting…' : 'Join live video'}
-                </button>
-              )}
-            </div>
-          </div>
-          {!services.video && !demo && (
-            <p className="inline-notice">
-              Live video is unavailable for this studio. You can continue with local camera
-              practice.
-            </p>
-          )}
-          {audioBlocked && connected && (
-            <p className="inline-notice" role="status">
-              Your browser has paused class audio. Select “Enable room audio” to hear your coach.
-            </p>
-          )}
-          {connected && connectionState !== 'connected' && (
-            <p className="inline-notice" role="status">
-              Reconnecting to the video room. Wait for the connection to recover before continuing.
-            </p>
-          )}
-          {devicesOpen && connected && (
-            <section className="panel meeting-settings">
-              <div>
-                <strong>Video & audio devices</strong>
-                <button
-                  className="icon-button"
-                  aria-label="Close device settings"
-                  onClick={() => setDevicesOpen(false)}
-                >
-                  <X size={18} />
-                </button>
-              </div>
-              <fieldset disabled={deviceBusy}>
-                <VideoDevices
-                  preferences={preferences}
-                  onChange={(next) => void changeDevices(next)}
-                />
-              </fieldset>
-            </section>
-          )}
-          <div className="call-controls panel">
-            <div>
-              <button
-                className="button outline"
-                aria-label={mic ? 'Mute microphone' : 'Enable microphone'}
-                disabled={!connected || deviceBusy}
-                aria-pressed={mic}
-                onClick={() => void toggleMic()}
+          <div className={`meeting-stage ${presenting ? 'with-presentation' : ''}`}>
+            <Presentation room={connected ? room.current : null} onActive={setPresenting} />
+            {coach ? (
+              <div
+                className="participant-grid meeting-gallery"
+                style={
+                  {
+                    '--gallery-columns': columns,
+                    '--gallery-rows': Math.ceil(count / columns),
+                    '--mobile-rows': Math.ceil(count / 2),
+                  } as React.CSSProperties
+                }
+                role="group"
+                aria-label="Class video gallery"
               >
-                {mic ? <Mic size={20} /> : <MicOff size={20} />}
-                {mic ? 'Mute mic' : 'Enable mic'}
-              </button>
-              <button
-                className="button outline"
-                aria-label={camera ? 'Disable video camera' : 'Enable video camera'}
-                disabled={!connected || deviceBusy}
-                aria-pressed={camera}
-                onClick={() => void toggleCamera()}
-              >
-                {camera ? <Video size={20} /> : <VideoOff size={20} />}
-                {camera ? 'Camera off' : 'Camera on'}
-              </button>
-              <button
-                className="button outline"
-                aria-label="Enable room audio"
-                disabled={!connected}
-                onClick={async () => {
-                  try {
-                    await room.current?.startAudio();
-                    setAudioBlocked(false);
-                  } catch {
-                    setAudioBlocked(true);
-                  }
-                }}
-              >
-                <Volume2 size={20} />
-                Enable room audio
-              </button>
-              <button
-                className="button outline"
-                disabled={!connected}
-                aria-expanded={devicesOpen}
-                onClick={() => setDevicesOpen(!devicesOpen)}
-              >
-                <Settings2 size={17} /> Devices
-              </button>
-              <button
-                className="button outline"
-                disabled={!connected || !camera || deviceBusy}
-                onClick={() => void flipCamera()}
-              >
-                <SwitchCamera size={17} /> Flip camera
-              </button>
-              <button
-                className="button outline"
-                disabled={!connected}
-                onClick={async () => {
-                  try {
-                    const element = document.querySelector<HTMLElement>(
-                      coach ? '.participant-grid' : '.coach-stage',
-                    );
-                    if (!document.fullscreenElement) await element?.requestFullscreen();
-                    else await document.exitFullscreen();
-                  } catch {
-                    setError('Fullscreen is unavailable in this browser.');
-                  }
-                }}
-              >
-                <Maximize size={17} /> Fullscreen
-              </button>
-              <span>
-                {demo ? 'Preview mode' : connected ? 'In the live class' : 'Your devices are off'}
-              </span>
-            </div>
-            {coach && connected && (
-              <button
-                className="button outline"
-                disabled={deviceBusy}
-                onClick={() => void muteParticipants()}
-              >
-                <MicOff size={17} /> Mute trainee microphones
-              </button>
-            )}
-            {!coach && item.status === 'live' && (
-              <button className="button outline" onClick={() => void help(true)}>
-                <Hand size={17} /> Ask my coach for help
-              </button>
-            )}
-            {connected && (
-              <button
-                className="button outline"
-                onClick={async () => {
-                  joinGeneration.current++;
-                  await room.current?.disconnect();
-                  setConnected(false);
-                  setStream(null);
-                }}
-              >
-                <LogOut size={17} /> Leave video
-              </button>
-            )}
-          </div>
-          <div className={`studio-grid ${coach ? 'coach-grid' : 'trainee-grid'}`}>
-            <div className="studio-main">
-              {coach ? (
-                <>
-                  <div className={`participant-grid ${focus ? 'has-focus' : ''}`}>
-                    {(focus
-                      ? item.participants.filter((p) => p.id === focus)
-                      : item.participants
-                    ).map((p, i) => {
-                      const person = remote.find((r) => r.identity === p.id);
-                      const fresh =
-                        p.metric &&
-                        p.metric.revision === item.revision &&
-                        p.metric.exercise === item.exercise &&
-                        !item.paused &&
-                        Date.now() - +new Date(p.metric.updatedAt) < 12000;
-                      return (
-                        <button
-                          key={p.id}
-                          className={`participant-tile ${p.helpRequested ? 'needs-attention' : ''} ${person?.isSpeaking ? 'is-speaking' : ''}`}
-                          aria-label={`Focus ${p.name}${p.helpRequested ? ', help requested' : ''}`}
-                          aria-pressed={focus === p.id}
-                          onClick={() => setFocus(focus === p.id ? null : p.id)}
-                        >
-                          <div className="participant-feed">
-                            {person ? (
-                              <ParticipantVideo participant={person} />
-                            ) : (
-                              <div
-                                className={`feed-placeholder ${['lavender', 'peach', 'sky', 'lime'][i % 4]}`}
-                              >
-                                <ExerciseArt exercise={item.exercise} />
-                                <span>{demo ? 'Illustrative feed' : 'Waiting for video'}</span>
-                              </div>
-                            )}
-                            <div className="feed-tags">
-                              <span className="pill">
-                                {p.helpRequested
-                                  ? 'Help requested'
-                                  : person
-                                    ? person.isSpeaking
-                                      ? 'Speaking'
-                                      : person.isMicrophoneEnabled
-                                        ? 'Mic on'
-                                        : 'Mic muted'
-                                    : demo
-                                      ? 'Sample participant'
-                                      : 'Offline'}
-                              </span>
-                              <span className="focus-icon">
-                                <ArrowUpRight size={17} />
-                              </span>
-                            </div>
-                            <div className="feed-person">
-                              <Avatar name={p.name} index={i} small />
-                              <strong>{p.name}</strong>
-                            </div>
+                {item.participants.map((p, i) => {
+                  const person = remote.find((r) => r.identity === p.id);
+                  const fresh =
+                    p.metric &&
+                    p.metric.revision === item.revision &&
+                    p.metric.exercise === item.exercise &&
+                    !item.paused &&
+                    Date.now() - +new Date(p.metric.updatedAt) < 12000;
+                  return (
+                    <button
+                      key={p.id}
+                      className={`participant-tile meeting-tile ${p.helpRequested ? 'needs-attention' : ''} ${person?.isSpeaking ? 'is-speaking' : ''} ${focus === p.id ? 'selected-trainee' : ''}`}
+                      aria-label={`Focus ${p.name}${p.helpRequested ? ', help requested' : ''}`}
+                      aria-pressed={focus === p.id}
+                      onClick={() => setFocus(focus === p.id ? null : p.id)}
+                    >
+                      <div className="participant-feed">
+                        {person ? (
+                          <ParticipantVideo participant={person} />
+                        ) : (
+                          <div className="meeting-empty-video">
+                            <Avatar name={p.name} index={i} />
+                            <span>{demo ? 'Preview · camera off' : 'Waiting to join'}</span>
                           </div>
-                          <div className="participant-stats">
-                            <div>
-                              <span>FORM ESTIMATE</span>
-                              <strong>
-                                {fresh && p.metric?.score !== null
-                                  ? Math.round(p.metric!.score!)
-                                  : '—'}
-                                <small>{fresh && p.metric?.score !== null ? '/100' : ''}</small>
-                              </strong>
-                            </div>
-                            <div>
-                              <span>{item.exercise === 'plank' ? 'HOLD TIME' : 'REPS'}</span>
-                              <strong>
-                                {fresh
-                                  ? item.exercise === 'plank'
-                                    ? `${p.metric!.holdSeconds}s`
-                                    : p.metric!.reps
-                                  : '—'}
-                              </strong>
-                            </div>
-                            <span className="participant-state">
-                              {fresh ? p.metric!.phase : demo ? 'Sample feed' : 'Awaiting tracking'}
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {!item.participants.length && (
-                    <div className="panel">
-                      <EmptyState
-                        title="A little quiet before the work."
-                        text="This session has no trainees enrolled. Use it as a coach rehearsal."
-                      />
-                    </div>
-                  )}
-                  {focus && (
-                    <button className="text-link" onClick={() => setFocus(null)}>
-                      <Users size={16} /> Show all participants
-                    </button>
-                  )}
-                  <div className="coach-video panel">
-                    <div>
-                      <Video size={19} />
-                      <span>Your coach camera</span>
-                    </div>
-                    {connected && camera && room.current ? (
-                      <div className="self-video">
-                        <ParticipantVideo participant={room.current.localParticipant} />
-                      </div>
-                    ) : (
-                      <p>
-                        {demo
-                          ? 'Sample mode has no live video. Open camera practice to analyze a real movement.'
-                          : 'Join live video to share your camera with the class.'}
-                      </p>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="coach-stage">
-                    <div className="meeting-heading">
-                      <strong>Your coach · {item.coachName}</strong>
-                      <button
-                        className="button outline small"
-                        aria-expanded={showClassmates}
-                        onClick={() => setShowClassmates(!showClassmates)}
-                      >
-                        <Users size={15} />
-                        {showClassmates ? 'Hide classmates' : 'Show classmates'}
-                      </button>
-                    </div>
-                    <div className="coach-primary-feed">
-                      {remote.find((p) => p.identity === item.coachId) ? (
-                        <ParticipantVideo
-                          participant={remote.find((p) => p.identity === item.coachId)!}
-                        />
-                      ) : (
-                        <div className="video-disabled">
-                          <Video size={26} />
-                          <span>
-                            {connected
-                              ? 'Waiting for your coach to join video'
-                              : 'Join live video to see and hear your coach'}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    {showClassmates && (
-                      <div className="classmate-gallery">
-                        {remote
-                          .filter((p) => p.identity !== item.coachId)
-                          .map((p) => (
-                            <div
-                              key={p.identity}
-                              className={`classmate-feed ${p.isSpeaking ? 'is-speaking' : ''}`}
-                            >
-                              <ParticipantVideo participant={p} />
-                              <span>
-                                {p.name || 'Classmate'} ·{' '}
-                                {p.isMicrophoneEnabled ? 'Mic on' : 'Muted'}
-                              </span>
-                            </div>
-                          ))}
-                        {!remote.some((p) => p.identity !== item.coachId) && (
-                          <p>No classmates have joined video yet.</p>
                         )}
+                        <div className="meeting-tile-top">
+                          {p.helpRequested && (
+                            <span className="help-badge">
+                              <Hand size={14} />
+                              Help requested
+                            </span>
+                          )}
+                          {person?.isSpeaking && <span className="speaking-badge">Speaking</span>}
+                          {focus === p.id && <span className="selected-badge">Selected</span>}
+                        </div>
+                        <div className="meeting-tile-name">
+                          <strong>{p.name}</strong>
+                          {person?.isMicrophoneEnabled ? <Mic size={15} /> : <MicOff size={15} />}
+                        </div>
+                      </div>
+                      <div className="participant-stats">
+                        <span>
+                          <strong>
+                            {fresh
+                              ? item.exercise === 'plank'
+                                ? `${p.metric!.holdSeconds}s`
+                                : p.metric!.reps
+                              : '—'}
+                          </strong>{' '}
+                          {item.exercise === 'plank' ? 'hold' : 'reps'}
+                        </span>
+                        <span>
+                          <strong>
+                            {fresh && p.metric?.score != null ? Math.round(p.metric.score) : '—'}
+                          </strong>{' '}
+                          form /100
+                        </span>
+                        <span className="participant-state">
+                          {fresh
+                            ? p.metric!.phase
+                            : item.paused
+                              ? 'Paused'
+                              : demo
+                                ? 'Sample participant'
+                                : 'No tracking'}
+                        </span>
+                      </div>
+                      {fresh && p.metric?.cue && (
+                        <span className="meeting-tile-cue">{p.metric.cue}</span>
+                      )}
+                    </button>
+                  );
+                })}
+                <div
+                  className={`meeting-tile coach-self-tile ${room.current?.localParticipant.isSpeaking ? 'is-speaking' : ''}`}
+                >
+                  <div className="participant-feed">
+                    {connected && camera && room.current ? (
+                      <ParticipantVideo participant={room.current.localParticipant} />
+                    ) : (
+                      <div className="meeting-empty-video">
+                        <Avatar name={user.name} />
+                        <span>
+                          {demo
+                            ? 'Preview · no live devices'
+                            : connected
+                              ? 'Camera off'
+                              : 'Join video to coach your class'}
+                        </span>
                       </div>
                     )}
+                    <div className="meeting-tile-name">
+                      <strong>
+                        {user.name} <small>(You · Coach)</small>
+                      </strong>
+                      {mic ? <Mic size={15} /> : <MicOff size={15} />}
+                    </div>
                   </div>
+                  <div className="participant-stats coach-tile-caption">
+                    <Video size={15} />
+                    <span>Your demonstration is shared with everyone</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="trainee-video-layout">
+                <div className="trainee-self-stage">
                   <CameraAnalyzer
                     exercise={item.exercise}
                     paused={item.paused || item.status !== 'live'}
@@ -980,197 +774,404 @@ export function Studio({
                         : undefined
                     }
                     onAnalysis={connected ? onAnalysis : undefined}
-                    initialReps={
-                      item.participants.find((p) => p.id === user.id)?.metric?.revision ===
-                      item.revision
-                        ? item.participants.find((p) => p.id === user.id)?.metric?.reps || 0
-                        : 0
-                    }
+                    initialReps={me?.metric?.revision === item.revision ? me.metric.reps : 0}
                     initialHoldSeconds={
-                      item.participants.find((p) => p.id === user.id)?.metric?.revision ===
-                      item.revision
-                        ? item.participants.find((p) => p.id === user.id)?.metric?.holdSeconds || 0
-                        : 0
+                      me?.metric?.revision === item.revision ? me.metric.holdSeconds : 0
                     }
                   />
-                  {lastCue && (
-                    <div className="human-cue">
-                      <Avatar name={item.coachName} small />
-                      <div>
-                        <span>YOUR COACH · {item.coachName}</span>
-                        <p>{lastCue.text}</p>
+                </div>
+                <div className="coach-stage meeting-tile">
+                  <div className="coach-primary-feed">
+                    {coachParticipant ? (
+                      <ParticipantVideo participant={coachParticipant} />
+                    ) : (
+                      <div className="meeting-empty-video">
+                        <Avatar name={item.coachName} />
+                        <span>
+                          {connected ? 'Waiting for your coach' : 'Join to see and hear your coach'}
+                        </span>
                       </div>
+                    )}
+                    <div className="meeting-tile-name">
+                      <strong>
+                        {item.coachName} <small>Coach</small>
+                      </strong>
+                      {coachParticipant?.isMicrophoneEnabled ? (
+                        <Mic size={15} />
+                      ) : (
+                        <MicOff size={15} />
+                      )}
                     </div>
-                  )}
-                </>
+                  </div>
+                  <div className="coach-tile-caption">Follow your coach’s demonstration</div>
+                </div>
+              </div>
+            )}
+          </div>
+          {!coach && lastCue && (
+            <div className="human-cue meeting-human-cue" role="status">
+              <strong>{item.coachName}</strong>
+              <p>{lastCue.text}</p>
+            </div>
+          )}
+          <footer className="meeting-dock" aria-label="Meeting controls">
+            <div className="meeting-call-buttons">
+              <button
+                className={`meeting-control ${!mic ? 'device-off' : ''}`}
+                aria-label={mic ? 'Mute microphone' : 'Enable microphone'}
+                aria-pressed={mic}
+                disabled={!connected || deviceBusy}
+                onClick={() => void toggleMic()}
+              >
+                {mic ? <Mic size={21} /> : <MicOff size={21} />}
+                <span>Mic</span>
+              </button>
+              <button
+                className={`meeting-control ${!camera ? 'device-off' : ''}`}
+                aria-label={camera ? 'Disable video camera' : 'Enable video camera'}
+                aria-pressed={camera}
+                disabled={!connected || deviceBusy}
+                onClick={() => void toggleCamera()}
+              >
+                {camera ? <Video size={21} /> : <VideoOff size={21} />}
+                <span>Camera</span>
+              </button>
+              <button
+                className="meeting-control"
+                aria-label="More options"
+                onClick={() => setDevicesOpen(true)}
+              >
+                <Settings2 size={21} />
+                <span>Options</span>
+              </button>
+              <button
+                className="meeting-control"
+                aria-label="Chat"
+                onClick={() => setChatOpen(true)}
+              >
+                <MessageSquare size={21} />
+                <span>Chat{messages.length ? ` (${messages.length})` : ''}</span>
+              </button>
+              {coach ? (
+                <button
+                  className={`meeting-control ${item.participants.some((p) => p.helpRequested) ? 'has-help' : ''}`}
+                  aria-label="Coach tools"
+                  onClick={() => setCoachToolsOpen(true)}
+                >
+                  <Users size={21} />
+                  <span>Coach tools</span>
+                </button>
+              ) : (
+                <button
+                  className={`meeting-control ${me?.helpRequested ? 'has-help' : ''}`}
+                  aria-label={me?.helpRequested ? 'Cancel help request' : 'Ask my coach for help'}
+                  aria-pressed={!!me?.helpRequested}
+                  disabled={item.status !== 'live'}
+                  onClick={() => void help(!me?.helpRequested)}
+                >
+                  <Hand size={21} />
+                  <span>{me?.helpRequested ? 'Hand raised' : 'Raise hand'}</span>
+                </button>
               )}
             </div>
-            <aside className="studio-side">
-              <section className="panel coaching-panel">
-                <SectionTitle
-                  title={coach ? 'A moment of guidance' : 'Your movement guide'}
-                  action={
-                    <span className="pill">
-                      <ScanLine size={13} /> {coach ? 'Coach' : 'Camera'}
-                    </span>
-                  }
-                />
-                {coach ? (
-                  <>
-                    <p>
-                      {focused
-                        ? `A personal cue for ${focused.name.split(' ')[0]}.`
-                        : 'Select a participant to send a personal correction, or guide the whole class.'}
-                    </p>
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        void send(cue, 'cue', focus || undefined);
-                      }}
-                    >
-                      <label className="sr-only" htmlFor="coach-cue">
-                        Coaching cue
-                      </label>
-                      <textarea
-                        id="coach-cue"
-                        placeholder="Keep the movement controlled. Let’s reset together…"
-                        value={cue}
-                        onChange={(e) => setCue(e.target.value)}
-                        maxLength={600}
-                      />
-                      <button
-                        className="button lime full"
-                        disabled={!cue.trim() || item.status !== 'live'}
-                      >
-                        <Send size={16} /> Send {focus ? 'personal' : 'class'} cue
-                      </button>
-                    </form>
-                    {focused?.helpRequested && (
-                      <button
-                        className="button outline full"
-                        onClick={() => void help(false, focused.id)}
-                      >
-                        <Check size={16} /> Mark help request addressed
-                      </button>
-                    )}
-                    {focused && connected && (
-                      <button
-                        className="button outline full"
-                        disabled={deviceBusy}
-                        onClick={() => void muteParticipants(focused.id)}
-                      >
-                        <MicOff size={16} /> Mute {focused.name.split(' ')[0]}’s microphone
-                      </button>
-                    )}
-                    <div className="privacy-note">
-                      <ShieldCheck size={18} />
-                      <p>
-                        Client summaries are visible to you. Private cues are delivered only to the
-                        selected trainee.
-                      </p>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div
-                      className={`practice-art ${exercises.find((e) => e.id === item.exercise)!.color}`}
-                    >
-                      <ExerciseArt exercise={item.exercise} />
-                    </div>
-                    <ol>
-                      {exercises
-                        .find((e) => e.id === item.exercise)!
-                        .instructions.map((i) => (
-                          <li key={i}>{i}</li>
-                        ))}
-                    </ol>
-                    <p className="microcopy">
-                      Estimates support your coach’s guidance. A high score does not establish that
-                      a movement is safe or perfect.
-                    </p>
-                  </>
-                )}
-              </section>
-              <section className="panel chat-panel">
-                <SectionTitle
-                  title="Session conversation"
-                  action={<span className="chat-count">{messages.length}</span>}
-                />
-                <div className="chat-messages" aria-live="polite">
-                  {!messages.length ? (
-                    <div className="chat-empty">
-                      <Users size={23} />
-                      <p>
-                        A little encouragement goes a long way.
-                        <br />
-                        Start the conversation.
-                      </p>
-                    </div>
-                  ) : (
-                    messages.map((m) => (
-                      <div
-                        className={`message ${m.senderId === user.id ? 'mine' : ''} ${m.kind === 'cue' ? 'cue-message' : ''}`}
-                        key={m.id}
-                      >
-                        <span>
-                          {m.senderName}
-                          {m.recipientId ? ' · Private' : ''}
-                          {m.kind === 'cue' ? ' · Coach cue' : ''}
-                        </span>
-                        <p>{m.text}</p>
-                        <time>
-                          {new Date(m.createdAt).toLocaleTimeString(undefined, {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </time>
-                      </div>
-                    ))
-                  )}
-                </div>
-                <form
-                  className="chat-input"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void send(draft);
+            <div className="meeting-session-buttons">
+              {coach && item.status === 'scheduled' && (
+                <button
+                  className="button lime"
+                  disabled={busy}
+                  onClick={() => void control('start')}
+                >
+                  <Play size={16} />
+                  Start class
+                </button>
+              )}
+              {coach && item.status === 'live' && (
+                <button
+                  className="button outline"
+                  disabled={busy}
+                  onClick={() => void control(item.paused ? 'resume' : 'pause')}
+                >
+                  {item.paused ? <Play size={17} /> : <Pause size={17} />}
+                  <span>{item.paused ? 'Resume' : 'Pause class'}</span>
+                </button>
+              )}
+              {!demo && !connected && item.status === 'live' && (
+                <button
+                  className="button lime"
+                  disabled={connecting || !services.video}
+                  onClick={() => setShowConsent(true)}
+                >
+                  <Video size={17} />
+                  {connecting ? 'Connecting…' : 'Join live video'}
+                </button>
+              )}
+              {connected && (
+                <button
+                  className="button meeting-leave"
+                  onClick={async () => {
+                    joinGeneration.current++;
+                    await room.current?.disconnect();
+                    setConnected(false);
+                    setStream(null);
                   }}
                 >
-                  <input
-                    aria-label="Session message"
-                    placeholder="Say something encouraging…"
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    maxLength={600}
-                  />
-                  <button
-                    aria-label="Send session message"
-                    className="icon-button"
-                    disabled={!draft.trim() || item.status !== 'live'}
-                  >
-                    <Send size={18} />
-                  </button>
-                </form>
-              </section>
-            </aside>
-          </div>
+                  <LogOut size={17} />
+                  <span>Leave video</span>
+                </button>
+              )}
+              {coach && item.status === 'live' && (
+                <button className="button danger" onClick={() => setEnding(true)}>
+                  End session
+                </button>
+              )}
+            </div>
+          </footer>
           {remote.map((p) => (
             <ParticipantAudio key={p.identity} participant={p} />
           ))}
         </>
+      )}
+      {coachToolsOpen && coach && (
+        <Modal title="Coach tools" onClose={() => setCoachToolsOpen(false)}>
+          <div className="form-stack">
+            <label>
+              Send guidance to
+              <select
+                aria-label="Cue recipient"
+                value={focus || ''}
+                onChange={(e) => setFocus(e.target.value || null)}
+              >
+                <option value="">Everyone in class</option>
+                {item.participants.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                    {p.helpRequested ? ' · Help requested' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {focused?.metric && (
+              <div className="coach-observation">
+                <strong>{focused.name}</strong>
+                <p>{focused.metric.cue}</p>
+                <small>
+                  {new Date(focused.metric.updatedAt).toLocaleTimeString()} · last reported feedback
+                </small>
+              </div>
+            )}
+            <form
+              className="form-stack"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void send(cue, 'cue', focus || undefined);
+              }}
+            >
+              <label htmlFor="coaching-cue">Coaching cue</label>
+              <textarea
+                id="coaching-cue"
+                value={cue}
+                onChange={(e) => setCue(e.target.value)}
+                placeholder="Give one clear correction…"
+                maxLength={600}
+                rows={3}
+              />
+              <button className="button lime full" disabled={!cue.trim() || item.status !== 'live'}>
+                <Send size={17} />
+                Send {focus ? 'personal' : 'class'} cue
+              </button>
+            </form>
+            {focused?.helpRequested && (
+              <button className="button outline full" onClick={() => void help(false, focused.id)}>
+                <Check size={17} />
+                Mark help request addressed
+              </button>
+            )}
+            {focused && connected && (
+              <button
+                className="button outline full"
+                disabled={deviceBusy}
+                onClick={() => void muteParticipants(focused.id)}
+              >
+                <MicOff size={17} />
+                Mute {focused.name.split(' ')[0]}’s microphone
+              </button>
+            )}
+            <button
+              className="button outline full"
+              disabled={!connected || deviceBusy}
+              onClick={() => void muteParticipants()}
+            >
+              <MicOff size={17} />
+              Mute trainee microphones
+            </button>
+            <p className="microcopy">
+              Speak through your microphone to coach the whole class. Select a trainee to send a
+              private text cue. Microphones can be muted; each trainee decides when to unmute.
+            </p>
+          </div>
+        </Modal>
+      )}
+      {chatOpen && (
+        <Modal title="Session conversation" onClose={() => setChatOpen(false)}>
+          <section className="chat-panel meeting-chat">
+            <div className="chat-messages" aria-live="polite">
+              {!messages.length ? (
+                <p className="microcopy">Send a message to the class.</p>
+              ) : (
+                messages.map((m) => (
+                  <div
+                    className={`message ${m.senderId === user.id ? 'mine' : ''} ${m.kind === 'cue' ? 'cue-message' : ''}`}
+                    key={m.id}
+                  >
+                    <span>
+                      {m.senderName}
+                      {m.recipientId ? ' · Private' : ''}
+                      {m.kind === 'cue' ? ' · Coach cue' : ''}
+                    </span>
+                    <p>{m.text}</p>
+                    <time>
+                      {new Date(m.createdAt).toLocaleTimeString(undefined, {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </time>
+                  </div>
+                ))
+              )}
+            </div>
+            <form
+              className="chat-input"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void send(draft);
+              }}
+            >
+              <input
+                aria-label="Session message"
+                placeholder="Message your class…"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                maxLength={600}
+              />
+              <button
+                aria-label="Send session message"
+                className="icon-button"
+                disabled={!draft.trim() || item.status !== 'live'}
+              >
+                <Send size={18} />
+              </button>
+            </form>
+          </section>
+        </Modal>
+      )}
+      {devicesOpen && (
+        <Modal title="Meeting options" onClose={() => setDevicesOpen(false)}>
+          <div className="form-stack">
+            {connected && (
+              <fieldset disabled={deviceBusy}>
+                <VideoDevices
+                  preferences={preferences}
+                  onChange={(next) => void changeDevices(next)}
+                />
+              </fieldset>
+            )}
+            <button
+              className="button outline full"
+              disabled={!connected || !camera || deviceBusy}
+              onClick={() => void flipCamera()}
+            >
+              <SwitchCamera size={17} />
+              Flip camera
+            </button>
+            <button
+              className="button outline full"
+              disabled={!connected}
+              onClick={async () => {
+                try {
+                  await room.current?.startAudio();
+                  setAudioBlocked(false);
+                } catch {
+                  setAudioBlocked(true);
+                }
+              }}
+            >
+              <Volume2 size={17} />
+              Enable room audio
+            </button>
+            {coach && (
+              <ScreenShareButton
+                room={connected ? room.current : null}
+                connected={connected}
+                onError={setError}
+              />
+            )}
+            <button
+              className="button outline full"
+              onClick={async () => {
+                try {
+                  if (!document.fullscreenElement) await meetingRef.current?.requestFullscreen();
+                  else await document.exitFullscreen();
+                } catch {
+                  setError('Fullscreen is unavailable in this browser.');
+                }
+              }}
+            >
+              <Maximize size={17} />
+              Fullscreen
+            </button>
+            {!coach && (
+              <button
+                className="button outline full"
+                onClick={() => {
+                  setDevicesOpen(false);
+                  setShowClassmates(true);
+                }}
+              >
+                <Users size={17} />
+                Show classmates
+              </button>
+            )}
+            <p className="microcopy">
+              {demo
+                ? 'Sample mode has no live participants. Try Camera practice to analyze your own movement.'
+                : !services.video
+                  ? 'Live video is unavailable. Your coach can enable it in studio configuration.'
+                  : `Video connection: ${connectionState}. Camera analysis stays on your device. No class recording.`}
+            </p>
+          </div>
+        </Modal>
+      )}
+      {showClassmates && !coach && (
+        <Modal title="Classmates" onClose={() => setShowClassmates(false)}>
+          <div className="classmate-gallery">
+            {remote
+              .filter((p) => p.identity !== item.coachId)
+              .map((p) => (
+                <div key={p.identity} className="classmate-feed">
+                  <ParticipantVideo participant={p} />
+                  <span>
+                    {p.name || 'Classmate'} · {p.isMicrophoneEnabled ? 'Mic on' : 'Muted'}
+                  </span>
+                </div>
+              ))}
+            {!remote.some((p) => p.identity !== item.coachId) && (
+              <p>No classmates have joined video yet.</p>
+            )}
+          </div>
+        </Modal>
       )}
       {showConsent && (
         <Modal title="A shared space to move together." onClose={() => setShowConsent(false)}>
           <div className="form-stack">
             <VideoDevices preview preferences={preferences} onChange={setPreferences} />
             <p>
-              This is a group class. Your camera and microphone, when enabled, are visible and
-              audible to all enrolled participants. Your coach and you can see your movement
-              summaries.
+              Your enabled camera and microphone are shared with this class. Movement summaries are
+              visible to you and your coach.
             </p>
             <div className="privacy-note">
               <ShieldCheck size={20} />
               <p>
-                Camera analysis runs locally. Fuzzfit does not record the class. You can stop
+                Camera analysis runs locally. Fuzzfit does not record the class. You can stop your
                 devices or leave at any time.
               </p>
             </div>
@@ -1212,6 +1213,7 @@ export function Studio({
     </div>
   );
 }
+
 function ParticipantVideo({ participant }: { participant: Participant }) {
   const ref = useRef<HTMLVideoElement>(null);
   const [ready, setReady] = useState(false);
@@ -1246,22 +1248,27 @@ function ParticipantVideo({ participant }: { participant: Participant }) {
   );
 }
 function ParticipantAudio({ participant }: { participant: Participant }) {
+  const tracks = Array.from(participant.audioTrackPublications.values()).flatMap((p) =>
+    p.track ? [p.track] : [],
+  );
+  return (
+    <>
+      {tracks.map((track) => (
+        <MeetingAudioTrack key={track.sid || track.mediaStreamTrack.id} track={track} />
+      ))}
+    </>
+  );
+}
+function MeetingAudioTrack({ track }: { track: Track }) {
   const ref = useRef<HTMLAudioElement>(null);
   useEffect(() => {
-    const tracks = Array.from(participant.audioTrackPublications.values()).flatMap((p) =>
-      p.track ? [p.track] : [],
-    );
     const element = ref.current;
-    if (element) tracks.forEach((t) => t.attach(element));
+    if (!element) return;
+    track.attach(element);
     return () => {
-      if (element) tracks.forEach((t) => t.detach(element));
+      track.detach(element);
+      element.srcObject = null;
     };
-  }, [
-    participant,
-    participant.audioTrackPublications.size,
-    Array.from(participant.audioTrackPublications.values())
-      .map((p) => p.track?.sid || 'none')
-      .join(','),
-  ]);
+  }, [track]);
   return <audio ref={ref} autoPlay />;
 }

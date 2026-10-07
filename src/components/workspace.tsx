@@ -1664,69 +1664,35 @@ const Camera = dynamic(() => import('./camera-analyzer').then((m) => m.CameraAna
 });
 function CameraPractice() {
   const [exercise, setExercise] = useState<ClassView['exercise']>('squat');
-  const e = exercises.find((x) => x.id === exercise)!;
   return (
-    <>
-      <PageHeading
-        eyebrow="ONE REP AT A TIME"
-        title="Meet your camera coach."
-        text="Practice locally with confidence-aware movement feedback."
-      />
-      <label className="practice-movement-selector">
-        Choose your movement
-        <select
-          aria-label="Exercise to practice"
-          value={exercise}
-          onChange={(event) => setExercise(event.target.value as ClassView['exercise'])}
-        >
-          {exercises.map((x) => (
-            <option key={x.id} value={x.id}>
-              {x.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="practice-grid">
-        <Camera exercise={exercise} />
-        <aside className="panel practice-guide">
-          <SectionTitle title="Choose your movement" />
-          <div className="exercise-options">
+    <section className="meeting-practice">
+      <div className="practice-heading">
+        <div>
+          <span className="eyebrow">CAMERA PRACTICE</span>
+          <h1>Focus on your movement.</h1>
+          <p>Choose a movement, position your camera, then start your set.</p>
+        </div>
+        <label>
+          Movement
+          <select
+            aria-label="Exercise to practice"
+            value={exercise}
+            onChange={(event) => setExercise(event.target.value as ClassView['exercise'])}
+          >
             {exercises.map((x) => (
-              <button
-                className={x.id === exercise ? 'selected' : ''}
-                key={x.id}
-                onClick={() => setExercise(x.id)}
-              >
-                <span className={`exercise-mini ${x.color}`}>
-                  <Dumbbell size={18} />
-                </span>
-                <span>
-                  <strong>{x.name}</strong>
-                  <small>{x.group}</small>
-                </span>
-                {x.id === exercise ? <Check size={17} /> : <ArrowRight size={16} />}
-              </button>
+              <option key={x.id} value={x.id}>
+                {x.name}
+              </option>
             ))}
-          </div>
-          <div className={`practice-art ${e.color}`}>
-            <ExerciseArt exercise={exercise} />
-          </div>
-          <h3>Set yourself up for success.</h3>
-          <ol>
-            {e.instructions.map((i) => (
-              <li key={i}>{i}</li>
-            ))}
-          </ol>
-          <div className="privacy-note">
-            <ShieldCheck size={19} />
-            <p>
-              Local practice stays on this device. Summaries are shared only in an enrolled live
-              session after consent.
-            </p>
-          </div>
-        </aside>
+          </select>
+        </label>
       </div>
-    </>
+      <Camera exercise={exercise} />
+      <p className="practice-privacy">
+        Local practice stays on this device. Live class summaries are shared with your coach after
+        you join with consent.
+      </p>
+    </section>
   );
 }
 function ScheduleForm({

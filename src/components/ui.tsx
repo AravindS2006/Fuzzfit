@@ -63,31 +63,13 @@ export function MotionArt({ small = false }: { small?: boolean }) {
   );
 }
 export function ExerciseArt({ exercise }: { exercise: string }) {
-  const shapes: Record<string, string> = {
-    squat: 'M67 45L80 80L116 89L123 126M80 80L59 112L29 120M67 47L104 37L122 51',
-    pushup: 'M36 51L70 65L111 77L147 88M45 55L49 94L31 118M70 65L62 104L84 122',
-    curl: 'M82 46L83 86L73 125M83 86L106 126M85 50L108 74L122 39',
-    plank: 'M37 51L73 65L117 78L145 89M42 53L48 93L28 106',
-  };
   return (
-    <svg viewBox="0 0 180 150" className="exercise-art" aria-hidden="true">
-      <circle cx="95" cy="76" r="57" fill="currentColor" opacity=".18" />
-      <path
-        d={shapes[exercise] || shapes.squat}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="9"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle
-        cx={exercise === 'squat' ? 62 : exercise === 'curl' ? 83 : 28}
-        cy={exercise === 'squat' ? 26 : exercise === 'curl' ? 27 : 41}
-        r="12"
-        fill="currentColor"
-      />
-      <path d="M20 133H159" stroke="currentColor" opacity=".35" strokeWidth="2" />
-    </svg>
+    <Dumbbell
+      className="exercise-art"
+      data-exercise={exercise}
+      strokeWidth={1.2}
+      aria-hidden="true"
+    />
   );
 }
 export function EmptyState({
@@ -125,8 +107,14 @@ export function Modal({
   const titleId = useId();
   useEffect(() => {
     const d = dialog.current;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     d?.showModal();
-    return () => d?.close();
+    return () => {
+      d?.close();
+      queueMicrotask(() => {
+        if (opener?.isConnected) opener.focus({ preventScroll: true });
+      });
+    };
   }, []);
   return (
     <dialog
