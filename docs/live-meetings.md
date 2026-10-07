@@ -1,12 +1,14 @@
 # Live fitness meetings
 
+The website opens /app; signed-out visitors are sent to login. The sample workspace is available only through an explicit /demo link.
+
 The coach opens a session, starts the class, and joins live video. Enrolled trainees join the same room after choosing their devices and agreeing to sharing. Microphones start off to reduce noise.
 
 The coach's gallery shows up to eight trainees and the coach together. Selecting a trainee highlights their tile without hiding others. Each tile shows recent repetitions or plank hold time, a form estimate, tracking phase, and the latest correction. Stale or low-confidence scores are unavailable rather than presented as successful form.
 
 Use the microphone to demonstrate and coach everyone. Coach tools sends a class-wide or private text correction, resolves raised hands, and mutes trainee microphones. Trainees control their own unmute. Chat is a separate dialog. Meeting options changes devices, flips the camera, enables blocked room audio, opens fullscreen, or starts a coach-only screen presentation. Screen video and optional tab audio are shared while the trainee gallery remains visible. Mobile browsers without screen capture can still join and view the class.
 
-Trainees see their own video with the pose overlay beside their coach. The coach selects the current exercise. Supported analysis currently covers squats, push-ups, curls, and planks; the app does not infer arbitrary exercises. Position the camera as directed, wait for tracking, and select Start set. Rehearsal movements do not count. Complete range transitions count repetitions; planks count observed aligned time. Invalid positioning shows a correction instead of a score.
+Trainees see their own video with the pose overlay beside their coach. The coach selects the current exercise. Supported analysis currently covers squats, push-ups, curls, and planks; the app does not infer arbitrary exercises. Enable the camera and select Start set while you are beside the device. Step back into view and hold the starting position. Five seconds of fresh valid camera frames completes the countdown, shows Go, and begins tracking automatically. Lost positioning or frozen frames resets the countdown; Cancel start, stopping the camera, changing exercise, pausing the class, or hiding the tab cancels the pending start. No second click is needed. If camera frames freeze, Retry tracking restarts analysis and clears the pending start without disconnecting live video. Rehearsal movements do not count. Complete range transitions count repetitions; planks count exact observed aligned time, including fractional milliseconds across set boundaries. Invalid positioning shows a correction instead of a score.
 
 Workout settings contains sets, repetitions or seconds, rest, text camera instructions, and optional angle/side/tempo calibration. An assigned workout plan seeds the targets. Voice corrections and repetition sounds are optional. Completed-set details stay on the current page; cumulative repetitions, hold time, and sampled form estimates from live classes are saved in Insights. Practice stays on the device.
 

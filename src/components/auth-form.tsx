@@ -85,7 +85,7 @@ export function AuthForm({
   return (
     <main className="auth-page">
       <section className="auth-story">
-        <Link href="/demo">
+        <Link href="/app">
           <Brand />
         </Link>
         <div>
