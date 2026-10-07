@@ -10,6 +10,8 @@ import {
   Pause,
   CheckCircle2,
   Settings2,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import type { Block, ExerciseId } from '@/lib/types';
 import {
@@ -116,6 +118,8 @@ export function CameraAnalyzer({
   const [armed, setArmed] = useState(false);
   const [showGo, setShowGo] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [countdownPaused, setCountdownPaused] = useState(false);
+  const [cueExpanded, setCueExpanded] = useState(false);
   const armedRef = useRef(false);
   const armedAt = useRef(0);
   const startClock = useRef(initialStartCountdown());
@@ -233,6 +237,7 @@ export function CameraAnalyzer({
     lastCountdownSound.current = null;
     setArmed(false);
     setCountdown(null);
+    setCountdownPaused(false);
     setShowGo(false);
   }
   function startSet() {
@@ -251,6 +256,7 @@ export function CameraAnalyzer({
     armedRef.current = true;
     lastCountdownSound.current = null;
     setCountdown(null);
+    setCountdownPaused(false);
     setArmed(true);
     setSettingsOpen(false);
     if (voiceRef.current && window.AudioContext) {
@@ -298,6 +304,7 @@ export function CameraAnalyzer({
     startClock.current = initialStartCountdown();
     lastCountdownSound.current = null;
     setCountdown(null);
+    setCountdownPaused(false);
     const unavailable = {
       ...empty,
       reps: tally.current.reps,
@@ -516,25 +523,28 @@ export function CameraAnalyzer({
             pausedRef.current,
             configRef.current,
           );
+          const continuing = armedRef.current && startClock.current.acquired;
           const ready =
-            canStartWorkout(result, exerciseRef.current, configRef.current) &&
-            (exerciseRef.current === 'plank' || previewState.current.stage === 'ready');
+            canStartWorkout(result, exerciseRef.current, configRef.current, continuing) &&
+            (continuing ||
+              exerciseRef.current === 'plank' ||
+              previewState.current.stage === 'ready');
           if (armedRef.current) {
             startClock.current = advanceStartCountdown(
               startClock.current,
               ready && data.timestamp >= armedAt.current,
               data.timestamp,
             );
-            const remaining =
-              startClock.current.lastFrameAt === null
-                ? null
-                : Math.ceil(startClock.current.remainingMs / 1000);
+            const remaining = !startClock.current.acquired
+              ? null
+              : Math.ceil(startClock.current.remainingMs / 1000);
             setCountdown(remaining);
+            setCountdownPaused(startClock.current.invalidSince !== null);
             if (remaining !== null && remaining > 0 && remaining !== lastCountdownSound.current) {
               signalRep();
               lastCountdownSound.current = remaining;
             }
-            if (startClock.current.remainingMs === 0) activateSet(data.timestamp);
+            if (ready && startClock.current.remainingMs === 0) activateSet(data.timestamp);
           }
           if (activeSet) {
             if (result.reps > tally.current.reps) signalRep();
@@ -555,10 +565,9 @@ export function CameraAnalyzer({
             result.holdSeconds = Math.floor(tally.current.holdMs / 1000);
             result.score = null;
             if (armedRef.current) {
-              result.phase =
-                startClock.current.lastFrameAt === null
-                  ? 'getting into position'
-                  : 'starting countdown';
+              result.phase = !startClock.current.acquired
+                ? 'getting into position'
+                : 'starting countdown';
               result.cue = ready
                 ? 'Hold your starting position through the countdown.'
                 : result.tracked
@@ -654,8 +663,10 @@ export function CameraAnalyzer({
       ? 'Tracking paused. Take a moment to reset.'
       : armed
         ? countdown === null
-          ? `Step back into view and hold the starting position. ${analysis.cue}`
-          : `Starting in ${countdown}. Hold your starting position.`
+          ? `${movementSteps[exercise][0]} Step into camera view.`
+          : countdownPaused
+            ? 'Countdown paused. Return to your starting position.'
+            : `Starting in ${countdown}. Stay in your starting position.`
         : mode === 'rest'
           ? 'Rest, breathe, and prepare for your next set.'
           : mode === 'complete'
@@ -665,7 +676,7 @@ export function CameraAnalyzer({
               : status === 'loading'
                 ? 'Preparing pose tracking. Keep your body in view.'
                 : mode === 'setup' && analysis.tracked
-                  ? 'Tap Start set, then step back and hold the starting position for the countdown.'
+                  ? 'Tap Start set, then step back. Wait for Go.'
                   : analysis.cue;
   const currentSet = Math.min(completedSets.length + 1, config.sets);
   return (
@@ -710,9 +721,17 @@ export function CameraAnalyzer({
         )}
         {((armed && countdown !== null) || showGo) && (
           <div className="start-countdown" role="status" aria-label="Set start countdown">
-            <span>{showGo ? 'Your set has started' : 'Hold your starting position'}</span>
+            <span>
+              {showGo ? 'Your set has started' : countdownPaused ? 'Countdown paused' : 'Get ready'}
+            </span>
             <strong>{showGo ? 'Go' : countdown}</strong>
-            <span>{showGo ? 'Move under control' : 'Your set starts automatically'}</span>
+            <span>
+              {showGo
+                ? 'Move under control'
+                : countdownPaused
+                  ? 'Return to your starting position'
+                  : 'Stay in position · Starts automatically'}
+            </span>
           </div>
         )}
         {status === 'loading' && (
@@ -758,7 +777,9 @@ export function CameraAnalyzer({
                     : armed
                       ? countdown === null
                         ? 'Getting ready'
-                        : `Starting in ${countdown}`
+                        : countdownPaused
+                          ? 'Countdown paused'
+                          : `Starting in ${countdown}`
                       : mode === 'rest'
                         ? 'Resting'
                         : mode === 'complete'
@@ -782,9 +803,17 @@ export function CameraAnalyzer({
             {error}
           </p>
         )}
-        <div className="cue-card analyzer-cue">
-          <ScanLine size={19} aria-hidden="true" />
+        <div className={`cue-card analyzer-cue ${cueExpanded ? 'is-expanded' : ''}`}>
+          <ScanLine size={16} aria-hidden="true" />
           <p role="status">{cue}</p>
+          <button
+            className="icon-button cue-expand"
+            aria-label={cueExpanded ? 'Collapse coaching cue' : 'Expand coaching cue'}
+            aria-expanded={cueExpanded}
+            onClick={() => setCueExpanded(!cueExpanded)}
+          >
+            {cueExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
         </div>
         <section className="set-progress analyzer-progress" aria-label="Set progress">
           <div>
@@ -793,7 +822,9 @@ export function CameraAnalyzer({
             </strong>
             <span>
               {armed
-                ? 'Step back · Hold position · Wait for Go'
+                ? countdownPaused
+                  ? 'Return to start position'
+                  : 'Wait for Go'
                 : mode === 'setup'
                   ? `${config.target} ${exercise === 'plank' ? 'seconds' : 'reps'} · Start when ready`
                   : mode === 'rest'
@@ -878,50 +909,49 @@ export function CameraAnalyzer({
               </button>
             )}
           </div>
-        </section>
-        <div className="analyzer-tools">
-          <span>Pose analysis stays on your device</span>
-          <div>
-            <button
-              className="icon-button"
-              title={voice ? 'Mute voice & rep sound' : 'Enable voice & rep sound'}
-              aria-label={voice ? 'Mute voice & rep sound' : 'Enable voice & rep sound'}
-              aria-pressed={voice}
-              onClick={() => {
-                setVoice(!voice);
-                voiceRef.current = !voice;
-                if (voice) window.speechSynthesis?.cancel();
-                else {
-                  if (window.AudioContext) {
-                    soundContext.current ??= new AudioContext();
-                    void soundContext.current.resume();
-                  }
-                  announce(analysis.cue, true);
-                }
-              }}
-            >
-              {voice ? <Volume2 size={18} /> : <VolumeX size={18} />}
-            </button>
-            {status !== 'off' && (
+          <div className="analyzer-tools" role="group" aria-label="Pose tracking controls">
+            <div>
               <button
                 className="icon-button"
-                title="Stop local camera analysis"
-                aria-label="Stop local camera analysis"
+                title={voice ? 'Mute voice & rep sound' : 'Enable voice & rep sound'}
+                aria-label={voice ? 'Mute voice & rep sound' : 'Enable voice & rep sound'}
+                aria-pressed={voice}
                 onClick={() => {
-                  stop();
-                  setStatus('off');
-                  setAnalysis({
-                    ...empty,
-                    reps: tally.current.reps,
-                    holdSeconds: Math.floor(tally.current.holdMs / 1000),
-                  });
+                  setVoice(!voice);
+                  voiceRef.current = !voice;
+                  if (voice) window.speechSynthesis?.cancel();
+                  else {
+                    if (window.AudioContext) {
+                      soundContext.current ??= new AudioContext();
+                      void soundContext.current.resume();
+                    }
+                    announce(analysis.cue, true);
+                  }
                 }}
               >
-                <CameraOff size={18} />
+                {voice ? <Volume2 size={18} /> : <VolumeX size={18} />}
               </button>
-            )}
+              {status !== 'off' && (
+                <button
+                  className="icon-button"
+                  title="Stop local camera analysis"
+                  aria-label="Stop local camera analysis"
+                  onClick={() => {
+                    stop();
+                    setStatus('off');
+                    setAnalysis({
+                      ...empty,
+                      reps: tally.current.reps,
+                      holdSeconds: Math.floor(tally.current.holdMs / 1000),
+                    });
+                  }}
+                >
+                  <CameraOff size={18} />
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        </section>
       </div>
       {settingsOpen && (
         <Modal title="Workout settings" onClose={() => setSettingsOpen(false)}>
@@ -1042,9 +1072,11 @@ export function CameraAnalyzer({
                 ))}
               </ol>
               <p className="microcopy">
-                Tap Start set before stepping back. Hold your starting position through the
-                five-second countdown. Full, controlled movements count after Go. Form scores are
-                camera estimates to review with your coach. Stop if a movement causes pain.
+                Tap Start set before stepping back. Stay in your starting position through the
+                five-second countdown. Small movements are tolerated; brief tracking uncertainty
+                pauses the timer. Full, controlled movements count after Go. Pose analysis stays on
+                your device. Form scores are camera estimates to review with your coach. Stop if a
+                movement causes pain.
               </p>
             </section>
             {mode === 'active' && (

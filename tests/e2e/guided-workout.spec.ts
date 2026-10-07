@@ -267,3 +267,61 @@ test('hands-free start waits for a stable starting pose and cancels safely', asy
     await browser.close();
   }
 });
+
+test('countdown tolerates small posture changes and pauses for a brief tracking dropout', async () => {
+  const browser = await chromium.launch({
+    channel: 'msedge',
+    args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
+  });
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  await addPoseFixture(page);
+  try {
+    await page.goto('http://localhost:3000/demo?view=practice');
+    await changePose(page, { poseAngle: 150 });
+    await page.getByRole('button', { name: 'Enable camera' }).click();
+    const start = page.getByRole('button', { name: 'Start set', exact: true });
+    const active = page.getByRole('button', { name: 'Pause set', exact: true });
+    const countdown = page.getByLabel('Set start countdown');
+    const remaining = countdown.locator('strong');
+    const reps = page.getByTestId('cumulative-reps');
+    await expect(start).toBeEnabled();
+    await start.click();
+    // The more forgiving continuation threshold must not weaken initial setup.
+    await page.waitForTimeout(1400);
+    await expect(countdown).toHaveCount(0);
+    await expect(active).toHaveCount(0);
+    await changePose(page, { poseAngle: 180 });
+    await expect(remaining).toHaveText('5');
+    await expect(remaining).toHaveText('3');
+    // Five degrees below the configured top angle is ordinary stance movement,
+    // not a new exercise or a reason to start another five-second countdown.
+    await changePose(page, { poseAngle: 150 });
+    await expect(remaining).toHaveText('2');
+    await expect(reps).toHaveText('00');
+    await changePose(page, { poseVisible: false });
+    await expect(page.getByText('Position camera', { exact: true })).toBeVisible();
+    await expect(countdown).toContainText('Countdown paused');
+    await page.waitForTimeout(500);
+    await expect(remaining).toHaveText('2');
+    await expect(active).toHaveCount(0);
+    await changePose(page, { poseVisible: true, poseAngle: 180 });
+    await expect(page.getByText('Pose detected', { exact: true })).toBeVisible();
+    // Lost frames consume no countdown time. Returning promptly resumes the
+    // remaining two seconds instead of resetting to five or starting early.
+    await expect(remaining).toHaveText('2');
+    await changePose(page, { poseAngle: 150 });
+    await expect(remaining).toHaveText('1');
+    await expect(active).toBeVisible();
+    await expect(reps).toHaveText('00');
+    // Starting during a tolerated stance change still creates a complete rep
+    // origin; the first controlled squat is counted normally after Go.
+    await changePose(page, { poseAngle: 95 });
+    await expect(page.getByText('lowered', { exact: true })).toBeVisible();
+    await page.waitForTimeout(650);
+    await changePose(page, { poseAngle: 180 });
+    await expect(reps).toHaveText('01');
+  } finally {
+    await browser.close();
+  }
+});

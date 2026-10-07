@@ -4475,6 +4475,130 @@ small {
   aspect-ratio: auto;
   position: relative;
 }
+.trainee-video-layout.coach-video-small {
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 0.22fr);
+}
+.trainee-video-layout.coach-video-medium {
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 0.36fr);
+}
+.trainee-video-layout.coach-video-large {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.75fr);
+}
+.trainee-video-layout.coach-video-minimized {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.trainee-video-layout .coach-stage.meeting-tile {
+  flex-direction: column;
+}
+.coach-video-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  flex-shrink: 0;
+  padding: 0 6px 0 10px;
+  background: #29323a;
+}
+.coach-video-toolbar > strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  font-weight: 500;
+}
+.coach-video-toolbar small {
+  color: #c0ccd5;
+  font-size: 10px;
+  margin-left: 5px;
+}
+.coach-video-toolbar > select {
+  width: 88px;
+  min-height: 36px;
+  flex-shrink: 0;
+  border: 1px solid #697985;
+  border-radius: 7px;
+  background: #202a32;
+  color: #edf4fa;
+  font-size: 12px;
+  padding: 4px 5px;
+}
+.coach-video-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: #edf4fa;
+  cursor: pointer;
+}
+.coach-video-toggle:hover {
+  background: #3f4c57;
+  border-radius: 7px;
+}
+.coach-video-toolbar > select[hidden],
+.meeting-room .coach-primary-feed[hidden] {
+  display: none;
+}
+@media (min-width: 601px) and (max-width: 950px) {
+  .trainee-video-layout.coach-video-medium {
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 0.36fr);
+  }
+  .trainee-video-layout.coach-video-large {
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 0.75fr);
+  }
+  .trainee-video-layout.coach-video-minimized {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 600px) {
+  .trainee-video-layout.coach-video-small,
+  .trainee-video-layout.coach-video-medium,
+  .trainee-video-layout.coach-video-large,
+  .trainee-video-layout.coach-video-minimized {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .trainee-video-layout.coach-video-small {
+    grid-template-rows: minmax(0, 1fr) minmax(96px, 16%);
+  }
+  .trainee-video-layout.coach-video-medium {
+    grid-template-rows: minmax(0, 1fr) minmax(120px, 22%);
+  }
+  .trainee-video-layout.coach-video-large {
+    grid-template-rows: minmax(0, 1fr) minmax(164px, 32%);
+  }
+  .trainee-video-layout.coach-video-minimized {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+}
+@media (min-width: 2000px) {
+  .coach-video-toolbar {
+    min-height: 58px;
+    gap: 10px;
+    padding-left: 16px;
+  }
+  .coach-video-toolbar > strong,
+  .coach-video-toolbar > select {
+    font-size: 18px;
+  }
+  .coach-video-toolbar small {
+    font-size: 14px;
+  }
+  .coach-video-toolbar > select {
+    width: 120px;
+    min-height: 48px;
+  }
+  .coach-video-toggle {
+    width: 58px;
+    min-height: 58px;
+  }
+}
 .meeting-presentation {
   flex: 0 1 42%;
   min-height: 100px;
@@ -5237,5 +5361,65 @@ small {
   }
   .start-countdown span {
     font-size: 10px;
+  }
+}
+
+.meeting-analyzer .analyzer-footer {
+  padding: 6px 10px 8px;
+}
+.meeting-analyzer .analyzer-cue {
+  min-width: 0;
+  padding: 2px 7px;
+  gap: 7px;
+  margin-bottom: 5px;
+  min-height: 32px;
+}
+.meeting-analyzer .analyzer-cue p {
+  min-width: 0;
+  flex: 1;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.meeting-analyzer .analyzer-cue.is-expanded p {
+  display: block;
+  overflow: visible;
+}
+.meeting-analyzer .cue-expand {
+  min-height: 28px;
+  min-width: 28px;
+  padding: 4px;
+  border: 0;
+  flex-shrink: 0;
+}
+.meeting-analyzer .analyzer-progress {
+  grid-template-columns: minmax(75px, 1fr) minmax(25px, 0.35fr) auto auto;
+  gap: 8px;
+}
+.meeting-analyzer .analyzer-tools {
+  margin: 0;
+}
+.meeting-analyzer .analyzer-tools > div {
+  gap: 4px;
+}
+@media (max-width: 600px) {
+  .meeting-analyzer .analyzer-progress {
+    grid-template-columns: minmax(65px, 1fr) auto auto;
+    gap: 5px;
+  }
+  .meeting-analyzer .analyzer-cue p {
+    font-size: 10px;
+  }
+  .meeting-analyzer .analyzer-tools .icon-button {
+    min-height: 32px;
+    min-width: 32px;
+  }
+  .meeting-analyzer .set-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 132px;
   }
 }

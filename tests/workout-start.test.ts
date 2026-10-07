@@ -6,6 +6,7 @@ import {
   advanceStartCountdown,
   canStartWorkout,
   initialStartCountdown,
+  START_POSE_GRACE_MS,
 } from '../src/lib/workout-start';
 
 function readyPose(exercise: ExerciseId, change: Partial<Analysis> = {}): Analysis {
@@ -27,7 +28,12 @@ function readyPose(exercise: ExerciseId, change: Partial<Analysis> = {}): Analys
 describe('hands-free set start', () => {
   it('requires five seconds of fresh consecutive ready frames', () => {
     let state = initialStartCountdown();
-    expect(state).toEqual({ remainingMs: 5000, lastFrameAt: null });
+    expect(state).toEqual({
+      remainingMs: 5000,
+      lastFrameAt: null,
+      invalidSince: null,
+      acquired: false,
+    });
     state = advanceStartCountdown(state, true, 1000);
     expect(state.remainingMs).toBe(5000);
     for (let timestamp = 1100; timestamp < 6000; timestamp += 100)
@@ -38,13 +44,53 @@ describe('hands-free set start', () => {
     expect(advanceStartCountdown(state, true, 6100).remainingMs).toBe(0);
   });
 
-  it('resets the whole countdown when the required pose is lost', () => {
+  it('pauses briefly lost positioning without crediting invalid or recovery intervals', () => {
     const first = advanceStartCountdown(initialStartCountdown(), true, 1000);
     const ticking = advanceStartCountdown(first, true, 1500);
     expect(ticking.remainingMs).toBe(4500);
-    const reset = advanceStartCountdown(ticking, false, 1600);
-    expect(reset).toEqual(initialStartCountdown());
-    expect(advanceStartCountdown(reset, true, 1700).remainingMs).toBe(5000);
+    const paused = advanceStartCountdown(ticking, false, 1600);
+    expect(paused.remainingMs).toBe(4500);
+    expect(paused.invalidSince).toBe(1600);
+    const uncertain = advanceStartCountdown(paused, false, 1900);
+    expect(uncertain.remainingMs).toBe(4500);
+    const recovered = advanceStartCountdown(uncertain, true, 2100);
+    expect(recovered.remainingMs).toBe(4500);
+    expect(recovered.invalidSince).toBeNull();
+    expect(advanceStartCountdown(recovered, true, 2200).remainingMs).toBe(4400);
+  });
+
+  it('requires a new starting pose after sustained loss, including a valid recovery at the limit', () => {
+    const first = advanceStartCountdown(initialStartCountdown(), true, 1000);
+    const ticking = advanceStartCountdown(first, true, 1500);
+    let paused = advanceStartCountdown(ticking, false, 1600);
+    paused = advanceStartCountdown(paused, false, 2100);
+    paused = advanceStartCountdown(paused, false, 2600);
+    for (const ready of [true, false]) {
+      const reset = advanceStartCountdown(paused, ready, 1600 + START_POSE_GRACE_MS);
+      expect(reset).toEqual(initialStartCountdown());
+      expect(advanceStartCountdown(reset, true, 2900).remainingMs).toBe(5000);
+    }
+  });
+
+  it('never starts from uncertain observations or completes a paused final interval', () => {
+    expect(advanceStartCountdown(initialStartCountdown(), false, 1000)).toEqual(
+      initialStartCountdown(),
+    );
+    let state = advanceStartCountdown(initialStartCountdown(), true, 1000);
+    for (let timestamp = 1100; timestamp <= 5900; timestamp += 100)
+      state = advanceStartCountdown(state, true, timestamp);
+    expect(state.remainingMs).toBe(100);
+    state = advanceStartCountdown(state, false, 6000);
+    state = advanceStartCountdown(state, true, 6500);
+    expect(state.remainingMs).toBe(100);
+    expect(advanceStartCountdown(state, true, 6600).remainingMs).toBe(0);
+  });
+
+  it('cannot build countdown time by alternating eligible and uncertain frames', () => {
+    let state = advanceStartCountdown(initialStartCountdown(), true, 1000);
+    for (let timestamp = 1100; timestamp < 4000; timestamp += 100)
+      state = advanceStartCountdown(state, timestamp % 200 === 0, timestamp);
+    expect(state.remainingMs).toBe(5000);
   });
 
   it('does not count a camera frame gap greater than 750 milliseconds', () => {
@@ -125,5 +171,35 @@ describe('hands-free set start', () => {
     expect(canStartWorkout(readyPose('curl', { phase: 'start position' }), 'curl', config)).toBe(
       false,
     );
+  });
+
+  it.each(['squat', 'pushup', 'curl'] as const)(
+    'allows small angle and score jitter only after acquiring %s',
+    (exercise) => {
+      const config = defaultWorkoutConfig(exercise);
+      const jitter = readyPose(exercise, {
+        angle: config.topAngle - 8,
+        phase: 'moving',
+        score: 65,
+      });
+      expect(canStartWorkout(jitter, exercise, config)).toBe(false);
+      expect(canStartWorkout(jitter, exercise, config, true)).toBe(true);
+      expect(
+        canStartWorkout({ ...jitter, angle: config.topAngle - 9 }, exercise, config, true),
+      ).toBe(false);
+      expect(canStartWorkout({ ...jitter, score: 64 }, exercise, config, true)).toBe(false);
+      expect(canStartWorkout({ ...jitter, tracked: false }, exercise, config, true)).toBe(false);
+      expect(canStartWorkout({ ...jitter, confidence: 0.64 }, exercise, config, true)).toBe(false);
+    },
+  );
+
+  it('continues an aligned plank through score jitter while rejecting sagging or missing geometry', () => {
+    const config = defaultWorkoutConfig('plank');
+    const jitter = readyPose('plank', { angle: 160, score: 65 });
+    expect(canStartWorkout(jitter, 'plank', config)).toBe(false);
+    expect(canStartWorkout(jitter, 'plank', config, true)).toBe(true);
+    expect(canStartWorkout({ ...jitter, angle: 159 }, 'plank', config, true)).toBe(false);
+    expect(canStartWorkout({ ...jitter, phase: 'adjusting' }, 'plank', config, true)).toBe(false);
+    expect(canStartWorkout({ ...jitter, angle: null }, 'plank', config, true)).toBe(false);
   });
 });

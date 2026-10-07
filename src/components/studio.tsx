@@ -23,6 +23,8 @@ import {
   Settings2,
   SwitchCamera,
   Maximize,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import type { Room, Participant, Track } from 'livekit-client';
 import type { Analysis } from '@/lib/pose-engine';
@@ -44,6 +46,8 @@ type LiveState = {
   participants: ClassView['participants'];
   messages: MessageView[];
 };
+type CoachVideoLayout = { size: 'small' | 'medium' | 'large'; minimized: boolean };
+const coachVideoPreferenceKey = 'fuzzfit:coach-video-layout:v1';
 export function Studio({
   initialClass,
   user,
@@ -83,6 +87,10 @@ export function Studio({
   const [coachToolsOpen, setCoachToolsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [presenting, setPresenting] = useState(false);
+  const [coachVideoLayout, setCoachVideoLayout] = useState<CoachVideoLayout>({
+    size: 'medium',
+    minimized: false,
+  });
   const meetingRef = useRef<HTMLDivElement>(null);
   const [preferences, setPreferences] = useState<DevicePreferences>({
     cameraId: '',
@@ -105,6 +113,17 @@ export function Studio({
   current.current = item;
   useEffect(() => {
     mounted.current = true;
+    try {
+      const saved = JSON.parse(localStorage.getItem(coachVideoPreferenceKey) || 'null');
+      if (
+        saved &&
+        ['small', 'medium', 'large'].includes(saved.size) &&
+        typeof saved.minimized === 'boolean'
+      )
+        setCoachVideoLayout({ size: saved.size, minimized: saved.minimized });
+    } catch {
+      // The meeting remains usable when device storage is unavailable.
+    }
     setHydrated(true);
     return () => {
       mounted.current = false;
@@ -509,6 +528,14 @@ export function Studio({
   function onAnalysis(a: Analysis) {
     latestAnalysis.current = { value: a, at: Date.now() };
   }
+  function updateCoachVideoLayout(next: CoachVideoLayout) {
+    setCoachVideoLayout(next);
+    try {
+      localStorage.setItem(coachVideoPreferenceKey, JSON.stringify(next));
+    } catch {
+      // Sizing still works without saving a device preference.
+    }
+  }
   if (!item)
     return (
       <EmptyState
@@ -757,7 +784,9 @@ export function Studio({
                 </div>
               </div>
             ) : (
-              <div className="trainee-video-layout">
+              <div
+                className={`trainee-video-layout coach-video-${coachVideoLayout.size}${coachVideoLayout.minimized ? ' coach-video-minimized' : ''}`}
+              >
                 <div className="trainee-self-stage">
                   <CameraAnalyzer
                     exercise={item.exercise}
@@ -780,8 +809,55 @@ export function Studio({
                     }
                   />
                 </div>
-                <div className="coach-stage meeting-tile">
-                  <div className="coach-primary-feed">
+                <div className="coach-stage meeting-tile" role="group" aria-label="Coach video">
+                  <div className="coach-video-toolbar">
+                    <strong title={item.coachName}>
+                      {item.coachName} <small>Coach</small>
+                    </strong>
+                    <select
+                      aria-label="Coach video size"
+                      value={coachVideoLayout.size}
+                      hidden={coachVideoLayout.minimized}
+                      onChange={(event) =>
+                        updateCoachVideoLayout({
+                          ...coachVideoLayout,
+                          size: event.target.value as CoachVideoLayout['size'],
+                        })
+                      }
+                    >
+                      <option value="small">Small</option>
+                      <option value="medium">Medium</option>
+                      <option value="large">Large</option>
+                    </select>
+                    <button
+                      className="coach-video-toggle"
+                      aria-label={
+                        coachVideoLayout.minimized ? 'Restore coach video' : 'Minimize coach video'
+                      }
+                      title={
+                        coachVideoLayout.minimized ? 'Restore coach video' : 'Minimize coach video'
+                      }
+                      aria-expanded={!coachVideoLayout.minimized}
+                      aria-controls="coach-video-feed"
+                      onClick={() =>
+                        updateCoachVideoLayout({
+                          ...coachVideoLayout,
+                          minimized: !coachVideoLayout.minimized,
+                        })
+                      }
+                    >
+                      {coachVideoLayout.minimized ? (
+                        <Maximize2 size={17} />
+                      ) : (
+                        <Minimize2 size={17} />
+                      )}
+                    </button>
+                  </div>
+                  <div
+                    id="coach-video-feed"
+                    className="coach-primary-feed"
+                    hidden={coachVideoLayout.minimized}
+                  >
                     {coachParticipant ? (
                       <ParticipantVideo participant={coachParticipant} />
                     ) : (
@@ -793,9 +869,7 @@ export function Studio({
                       </div>
                     )}
                     <div className="meeting-tile-name">
-                      <strong>
-                        {item.coachName} <small>Coach</small>
-                      </strong>
+                      <span>{coachParticipant?.isSpeaking ? 'Speaking' : 'Coach audio'}</span>
                       {coachParticipant?.isMicrophoneEnabled ? (
                         <Mic size={15} />
                       ) : (
@@ -803,7 +877,6 @@ export function Studio({
                       )}
                     </div>
                   </div>
-                  <div className="coach-tile-caption">Follow your coach’s demonstration</div>
                 </div>
               </div>
             )}
