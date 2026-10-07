@@ -10,7 +10,7 @@ import {
   safeError,
   requireClass,
 } from '@/lib/security';
-import { RoomServiceClient } from 'livekit-server-sdk';
+import { RoomServiceClient, TrackSource } from 'livekit-server-sdk';
 export async function POST(request: Request) {
   try {
     const user = await requireUser();
@@ -24,6 +24,43 @@ export async function POST(request: Request) {
     };
     let result: Record<string, unknown> = { ok: true };
     switch (data.action) {
+      case 'muteParticipants': {
+        requireCoach();
+        const item = await requireClass(data.id, user.id);
+        if (item.studio.ownerId !== user.id)
+          throw new ApiError(403, 'Only this session’s coach can mute participants.');
+        if (item.status !== 'live')
+          throw new ApiError(409, 'Start this class before managing microphones.');
+        const allowed = new Set(item.enrollments.map((e) => e.userId));
+        if (data.participantId && !allowed.has(data.participantId))
+          throw new ApiError(400, 'Choose an enrolled trainee.');
+        const service = videoService();
+        if (!service) throw new ApiError(503, 'Live video is unavailable.');
+        try {
+          const participants = await service.listParticipants(`fuzzfit-${item.id}`);
+          await Promise.all(
+            participants
+              .filter(
+                (p) =>
+                  allowed.has(p.identity) &&
+                  (!data.participantId || p.identity === data.participantId),
+              )
+              .flatMap((p) =>
+                p.tracks
+                  .filter((t) => t.source === TrackSource.MICROPHONE && !t.muted)
+                  .map((t) =>
+                    service.mutePublishedTrack(`fuzzfit-${item.id}`, p.identity, t.sid, true),
+                  ),
+              ),
+          );
+        } catch {
+          throw new ApiError(502, 'Some microphones could not be muted. Retry shortly.');
+        }
+        await db.auditEvent.create({
+          data: { actorId: user.id, action: 'muteParticipants', targetId: item.id },
+        });
+        break;
+      }
       case 'onboard': {
         if (user.role !== 'unset') throw new ApiError(409, 'Your account is already set up.');
         await db.$transaction(
@@ -186,7 +223,7 @@ export async function POST(request: Request) {
                 ? { status: 'cancelled', endedAt: new Date() }
                 : data.control === 'exercise'
                   ? { exercise: data.exercise, revision: { increment: 1 } }
-                  : { paused: data.control === 'pause', revision: { increment: 1 } };
+                  : { paused: data.control === 'pause' };
         const updated = await db.classSession.updateMany({
           where: { id: item.id, status: allowed, revision: item.revision },
           data: change,

@@ -35,7 +35,9 @@ test('sample studio supports navigation, plan edits, scheduling, and an isolated
   await expect(page.getByRole('button', { name: 'Resume' })).toBeVisible();
   expect(errors).toEqual([]);
 });
-test('mobile workspace has no horizontal overflow and opens navigation', async ({ page }) => {
+test('mobile navigation closes with its close button, backdrop, Escape, and Settings', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/demo');
   await expect(page.getByRole('heading', { name: 'A good day to make progress.' })).toBeVisible();
@@ -43,8 +45,50 @@ test('mobile workspace has no horizontal overflow and opens navigation', async (
     true,
   );
   await page.getByRole('button', { name: 'Open navigation' }).click();
+  await expect(page.getByRole('dialog', { name: 'Workspace navigation' })).toBeVisible();
+  await page.getByRole('button', { name: 'Close navigation' }).click();
+  await expect(page.getByRole('dialog', { name: 'Workspace navigation' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open navigation' })).toBeFocused();
+  await page.getByRole('button', { name: 'Open navigation' }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Open navigation' })).toBeFocused();
+  await page.getByRole('button', { name: 'Open navigation' }).click();
+  await page
+    .getByRole('button', { name: 'Dismiss navigation' })
+    .click({ position: { x: 340, y: 100 } });
+  await expect(page.getByRole('dialog', { name: 'Workspace navigation' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Open navigation' }).click();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Workspace navigation' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Open navigation' }).click();
   await page.getByRole('link', { name: 'My clients' }).click();
   await expect(page.getByRole('heading', { name: 'People make the progress.' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+});
+
+test('exercise instructions and configurable targets are available before camera permission', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/demo?view=practice');
+  await expect(page.getByRole('region', { name: 'How to do this exercise' })).toBeVisible();
+  await expect(
+    page.getByText('Stand tall, feet about shoulder-width apart.', { exact: false }),
+  ).toBeVisible();
+  await page.getByLabel('Sets', { exact: true }).fill('2');
+  await page.getByLabel('Reps per set').fill('8');
+  await page.getByLabel('Rest (seconds)').fill('30');
+  await expect(page.getByRole('button', { name: 'Start set', exact: true })).toBeDisabled();
+  await page.reload();
+  await expect(page.getByLabel('Sets', { exact: true })).toHaveValue('2');
+  await expect(page.getByLabel('Reps per set')).toHaveValue('8');
+  await page.getByLabel('Exercise to practice').selectOption('plank');
+  await expect(page.getByLabel('Seconds per set')).toHaveValue('30');
+  await expect(
+    page.getByText('Only time observed in alignment counts.', { exact: false }),
+  ).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );

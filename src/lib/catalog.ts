@@ -42,7 +42,7 @@ export const exercises: {
     view: 'Side view · upper body',
     instructions: [
       'Place the camera perpendicular to your working arm.',
-      'Keep your shoulder, elbow, and wrist in frame.',
+      'Keep your shoulder, elbow, wrist, and hip in frame.',
       'Curl within a comfortable range, keeping the upper arm steady.',
     ],
     color: 'peach',

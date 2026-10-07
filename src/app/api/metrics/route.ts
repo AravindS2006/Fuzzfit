@@ -26,11 +26,17 @@ export async function POST(request: Request) {
         const previous = enrollment.metric;
         if (previous?.revision === data.revision && data.reps < previous.reps)
           throw new ApiError(409, 'Stale rep count.');
+        if (previous?.revision === data.revision && data.holdSeconds < previous.holdSeconds)
+          throw new ApiError(409, 'Stale hold time.');
         const delta = data.reps - (previous?.revision === data.revision ? previous.reps : 0);
         // Client estimates are untrusted: enforce a physical plausibility bound per reporting interval.
         const elapsed = previous ? (Date.now() - previous.updatedAt.getTime()) / 1000 : 3;
         if (delta > Math.max(4, Math.ceil(elapsed * 2)))
           throw new ApiError(400, 'Rep summary changed too quickly.');
+        const holdDelta =
+          data.holdSeconds - (previous?.revision === data.revision ? previous.holdSeconds : 0);
+        if (holdDelta > Math.max(4, Math.ceil(elapsed + 2)))
+          throw new ApiError(400, 'Hold summary changed too quickly.');
         const validScore = data.confidence >= 0.65 ? data.score : null;
         const values = {
           exercise: data.exercise,

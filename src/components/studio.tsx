@@ -23,13 +23,17 @@ import {
   Volume2,
   Clock3,
   CheckCircle2,
+  Settings2,
+  SwitchCamera,
+  Maximize,
 } from 'lucide-react';
-import type { Room, Participant, RemoteTrack, RemoteTrackPublication } from 'livekit-client';
+import type { Room, Participant } from 'livekit-client';
 import type { Analysis } from '@/lib/pose-engine';
 import type { ClassView, MessageView, Person, WorkspaceData } from '@/lib/types';
 import { apiCommand, fetchJson } from '@/lib/client';
 import { exercises, exerciseName } from '@/lib/catalog';
 import { Avatar, EmptyState, ExerciseArt, Modal, SectionTitle } from './ui';
+import { VideoDevices, type DevicePreferences } from './video-devices';
 const CameraAnalyzer = dynamic(() => import('./camera-analyzer').then((m) => m.CameraAnalyzer), {
   ssr: false,
 });
@@ -77,6 +81,17 @@ export function Studio({
     [seconds, setSeconds] = useState(0),
     [connectionState, setConnectionState] = useState('Not connected'),
     [analysisWarning, setAnalysisWarning] = useState('');
+  const [devicesOpen, setDevicesOpen] = useState(false);
+  const [preferences, setPreferences] = useState<DevicePreferences>({
+    cameraId: '',
+    microphoneId: '',
+    cameraOn: true,
+    microphoneOn: false,
+  });
+  const [deviceBusy, setDeviceBusy] = useState(false);
+  const [audioBlocked, setAudioBlocked] = useState(false);
+  const [showClassmates, setShowClassmates] = useState(false);
+  const [facing, setFacing] = useState<'user' | 'environment'>('user');
   const room = useRef<Room | null>(null),
     current = useRef(item),
     latestAnalysis = useRef<{ value: Analysis; at: number } | null>(null),
@@ -210,7 +225,7 @@ export function Studio({
                 status: control === 'start' ? 'live' : control === 'end' ? 'completed' : c.status,
                 paused: control === 'pause' ? true : control === 'resume' ? false : c.paused,
                 exercise: (exercise as ClassView['exercise']) || c.exercise,
-                revision: c.revision + 1,
+                revision: control === 'exercise' ? c.revision + 1 : c.revision,
                 startedAt: control === 'start' ? new Date().toISOString() : c.startedAt,
               }
             : c,
@@ -250,7 +265,16 @@ export function Studio({
       const instance = new Room({
         adaptiveStream: true,
         dynacast: true,
-        videoCaptureDefaults: { resolution: { width: 640, height: 480, frameRate: 24 } },
+        videoCaptureDefaults: {
+          resolution: { width: 640, height: 480, frameRate: 24 },
+          deviceId: preferences.cameraId || undefined,
+          facingMode: facing,
+        },
+        audioCaptureDefaults: {
+          deviceId: preferences.microphoneId || undefined,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
         publishDefaults: { videoSimulcastLayers: [VideoPresets.h180] },
       });
       if (!mounted.current || joinGeneration.current !== run) {
@@ -259,10 +283,21 @@ export function Studio({
       }
       room.current = instance;
       const update = () => {
-        if (mounted.current) {
+        if (mounted.current && room.current === instance) {
           setRemote([...instance.remoteParticipants.values()]);
           const track = instance.localParticipant.getTrackPublication(Track.Source.Camera)?.track;
-          setStream(track?.mediaStreamTrack ? new MediaStream([track.mediaStreamTrack]) : null);
+          const mediaTrack = instance.localParticipant.isCameraEnabled
+            ? track?.mediaStreamTrack
+            : undefined;
+          setStream((previous) =>
+            mediaTrack
+              ? previous?.getVideoTracks()[0] === mediaTrack
+                ? previous
+                : new MediaStream([mediaTrack])
+              : null,
+          );
+          setCamera(instance.localParticipant.isCameraEnabled);
+          setMic(instance.localParticipant.isMicrophoneEnabled);
         }
       };
       instance
@@ -274,11 +309,17 @@ export function Studio({
         .on(RoomEvent.LocalTrackUnpublished, update)
         .on(RoomEvent.TrackMuted, update)
         .on(RoomEvent.TrackUnmuted, update);
+      instance.on(RoomEvent.ActiveSpeakersChanged, update);
+      instance.on(RoomEvent.ConnectionQualityChanged, update);
+      instance.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+        if (mounted.current && room.current === instance)
+          setAudioBlocked(!instance.canPlaybackAudio);
+      });
       instance.on(RoomEvent.ConnectionStateChanged, (s) => {
-        if (mounted.current) setConnectionState(s);
+        if (mounted.current && room.current === instance) setConnectionState(s);
       });
       instance.on(RoomEvent.Disconnected, () => {
-        if (mounted.current) {
+        if (mounted.current && room.current === instance) {
           setConnected(false);
           setStream(null);
           setCamera(false);
@@ -293,9 +334,13 @@ export function Studio({
       setConnected(true);
       try {
         await instance.startAudio();
-      } catch {}
-      await instance.localParticipant.setCameraEnabled(true);
-      setCamera(true);
+      } catch {
+        setAudioBlocked(true);
+      }
+      await instance.localParticipant.setCameraEnabled(preferences.cameraOn);
+      await instance.localParticipant.setMicrophoneEnabled(preferences.microphoneOn);
+      setCamera(preferences.cameraOn);
+      setMic(preferences.microphoneOn);
       update();
     } catch (err) {
       if (mounted.current) {
@@ -312,24 +357,92 @@ export function Studio({
     }
   }
   async function toggleCamera() {
+    if (!room.current || deviceBusy) return;
+    setDeviceBusy(true);
     try {
       await room.current?.localParticipant.setCameraEnabled(!camera);
       setCamera(!camera);
       const { Track } = await import('livekit-client');
       const track = room.current?.localParticipant.getTrackPublication(Track.Source.Camera)?.track;
-      setStream(
-        !camera && track?.mediaStreamTrack ? new MediaStream([track.mediaStreamTrack]) : null,
+      const mediaTrack = !camera ? track?.mediaStreamTrack : undefined;
+      setStream((previous) =>
+        mediaTrack
+          ? previous?.getVideoTracks()[0] === mediaTrack
+            ? previous
+            : new MediaStream([mediaTrack])
+          : null,
       );
     } catch {
       setError('Camera could not be enabled. Check your browser permissions.');
+    } finally {
+      setDeviceBusy(false);
     }
   }
   async function toggleMic() {
+    if (!room.current || deviceBusy) return;
+    setDeviceBusy(true);
     try {
       await room.current?.localParticipant.setMicrophoneEnabled(!mic);
       setMic(!mic);
     } catch {
       setError('Microphone could not be enabled. Check your browser permissions.');
+    } finally {
+      setDeviceBusy(false);
+    }
+  }
+  async function changeDevices(next: DevicePreferences) {
+    if (!room.current || deviceBusy) return;
+    setDeviceBusy(true);
+    setError('');
+    const instance = room.current;
+    try {
+      if (
+        next.cameraId !== preferences.cameraId &&
+        !(await instance.switchActiveDevice('videoinput', next.cameraId || 'default'))
+      )
+        throw new Error('This camera could not be selected.');
+      if (
+        next.microphoneId !== preferences.microphoneId &&
+        !(await instance.switchActiveDevice('audioinput', next.microphoneId || 'default'))
+      )
+        throw new Error('This microphone could not be selected.');
+      setPreferences(next);
+      const { Track } = await import('livekit-client');
+      const track = instance.localParticipant.getTrackPublication(Track.Source.Camera)?.track
+        ?.mediaStreamTrack;
+      setStream((previous) =>
+        camera && track
+          ? previous?.getVideoTracks()[0] === track
+            ? previous
+            : new MediaStream([track])
+          : null,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Device could not be switched.');
+    } finally {
+      setDeviceBusy(false);
+    }
+  }
+  async function flipCamera() {
+    const instance = room.current;
+    if (!instance || !camera || deviceBusy) return;
+    setDeviceBusy(true);
+    setError('');
+    try {
+      const { Track } = await import('livekit-client');
+      const track = instance.localParticipant.getTrackPublication(Track.Source.Camera)?.videoTrack;
+      if (!track) throw new Error('Turn on your camera first.');
+      const next = facing === 'user' ? 'environment' : 'user';
+      await track.restartTrack({ facingMode: next, deviceId: undefined });
+      const actual = track.mediaStreamTrack.getSettings().facingMode;
+      if (actual && actual !== next) throw new Error('The requested camera is unavailable.');
+      setFacing(next);
+      setPreferences((p) => ({ ...p, cameraId: '' }));
+      setStream(new MediaStream([track.mediaStreamTrack]));
+    } catch {
+      setError('The other camera is unavailable. Choose a camera in Devices.');
+    } finally {
+      setDeviceBusy(false);
     }
   }
   async function send(text: string, kind = 'chat', recipientId?: string) {
@@ -377,6 +490,18 @@ export function Studio({
       else await apiCommand({ action: 'help', id: item.id, requested, userId: target });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Please retry.');
+    }
+  }
+  async function muteParticipants(participantId?: string) {
+    if (!item || deviceBusy) return;
+    setDeviceBusy(true);
+    setError('');
+    try {
+      await apiCommand({ action: 'muteParticipants', id: item.id, participantId });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Microphones could not be muted.');
+    } finally {
+      setDeviceBusy(false);
     }
   }
   function onAnalysis(a: Analysis) {
@@ -539,6 +664,138 @@ export function Studio({
               practice.
             </p>
           )}
+          {audioBlocked && connected && (
+            <p className="inline-notice" role="status">
+              Your browser has paused class audio. Select “Enable room audio” to hear your coach.
+            </p>
+          )}
+          {connected && connectionState !== 'connected' && (
+            <p className="inline-notice" role="status">
+              Reconnecting to the video room. Wait for the connection to recover before continuing.
+            </p>
+          )}
+          {devicesOpen && connected && (
+            <section className="panel meeting-settings">
+              <div>
+                <strong>Video & audio devices</strong>
+                <button
+                  className="icon-button"
+                  aria-label="Close device settings"
+                  onClick={() => setDevicesOpen(false)}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <fieldset disabled={deviceBusy}>
+                <VideoDevices
+                  preferences={preferences}
+                  onChange={(next) => void changeDevices(next)}
+                />
+              </fieldset>
+            </section>
+          )}
+          <div className="call-controls panel">
+            <div>
+              <button
+                className="button outline"
+                aria-label={mic ? 'Mute microphone' : 'Enable microphone'}
+                disabled={!connected || deviceBusy}
+                aria-pressed={mic}
+                onClick={() => void toggleMic()}
+              >
+                {mic ? <Mic size={20} /> : <MicOff size={20} />}
+                {mic ? 'Mute mic' : 'Enable mic'}
+              </button>
+              <button
+                className="button outline"
+                aria-label={camera ? 'Disable video camera' : 'Enable video camera'}
+                disabled={!connected || deviceBusy}
+                aria-pressed={camera}
+                onClick={() => void toggleCamera()}
+              >
+                {camera ? <Video size={20} /> : <VideoOff size={20} />}
+                {camera ? 'Camera off' : 'Camera on'}
+              </button>
+              <button
+                className="button outline"
+                aria-label="Enable room audio"
+                disabled={!connected}
+                onClick={async () => {
+                  try {
+                    await room.current?.startAudio();
+                    setAudioBlocked(false);
+                  } catch {
+                    setAudioBlocked(true);
+                  }
+                }}
+              >
+                <Volume2 size={20} />
+                Enable room audio
+              </button>
+              <button
+                className="button outline"
+                disabled={!connected}
+                aria-expanded={devicesOpen}
+                onClick={() => setDevicesOpen(!devicesOpen)}
+              >
+                <Settings2 size={17} /> Devices
+              </button>
+              <button
+                className="button outline"
+                disabled={!connected || !camera || deviceBusy}
+                onClick={() => void flipCamera()}
+              >
+                <SwitchCamera size={17} /> Flip camera
+              </button>
+              <button
+                className="button outline"
+                disabled={!connected}
+                onClick={async () => {
+                  try {
+                    const element = document.querySelector<HTMLElement>(
+                      coach ? '.participant-grid' : '.coach-stage',
+                    );
+                    if (!document.fullscreenElement) await element?.requestFullscreen();
+                    else await document.exitFullscreen();
+                  } catch {
+                    setError('Fullscreen is unavailable in this browser.');
+                  }
+                }}
+              >
+                <Maximize size={17} /> Fullscreen
+              </button>
+              <span>
+                {demo ? 'Preview mode' : connected ? 'In the live class' : 'Your devices are off'}
+              </span>
+            </div>
+            {coach && connected && (
+              <button
+                className="button outline"
+                disabled={deviceBusy}
+                onClick={() => void muteParticipants()}
+              >
+                <MicOff size={17} /> Mute trainee microphones
+              </button>
+            )}
+            {!coach && item.status === 'live' && (
+              <button className="button outline" onClick={() => void help(true)}>
+                <Hand size={17} /> Ask my coach for help
+              </button>
+            )}
+            {connected && (
+              <button
+                className="button outline"
+                onClick={async () => {
+                  joinGeneration.current++;
+                  await room.current?.disconnect();
+                  setConnected(false);
+                  setStream(null);
+                }}
+              >
+                <LogOut size={17} /> Leave video
+              </button>
+            )}
+          </div>
           <div className={`studio-grid ${coach ? 'coach-grid' : 'trainee-grid'}`}>
             <div className="studio-main">
               {coach ? (
@@ -558,7 +815,9 @@ export function Studio({
                       return (
                         <button
                           key={p.id}
-                          className={`participant-tile ${p.helpRequested ? 'needs-attention' : ''}`}
+                          className={`participant-tile ${p.helpRequested ? 'needs-attention' : ''} ${person?.isSpeaking ? 'is-speaking' : ''}`}
+                          aria-label={`Focus ${p.name}${p.helpRequested ? ', help requested' : ''}`}
+                          aria-pressed={focus === p.id}
                           onClick={() => setFocus(focus === p.id ? null : p.id)}
                         >
                           <div className="participant-feed">
@@ -577,7 +836,11 @@ export function Studio({
                                 {p.helpRequested
                                   ? 'Help requested'
                                   : person
-                                    ? 'Connected'
+                                    ? person.isSpeaking
+                                      ? 'Speaking'
+                                      : person.isMicrophoneEnabled
+                                        ? 'Mic on'
+                                        : 'Mic muted'
                                     : demo
                                       ? 'Sample participant'
                                       : 'Offline'}
@@ -602,8 +865,14 @@ export function Studio({
                               </strong>
                             </div>
                             <div>
-                              <span>REPS</span>
-                              <strong>{fresh ? p.metric!.reps : '—'}</strong>
+                              <span>{item.exercise === 'plank' ? 'HOLD TIME' : 'REPS'}</span>
+                              <strong>
+                                {fresh
+                                  ? item.exercise === 'plank'
+                                    ? `${p.metric!.holdSeconds}s`
+                                    : p.metric!.reps
+                                  : '—'}
+                              </strong>
                             </div>
                             <span className="participant-state">
                               {fresh ? p.metric!.phase : demo ? 'Sample feed' : 'Awaiting tracking'}
@@ -646,11 +915,70 @@ export function Studio({
                 </>
               ) : (
                 <>
+                  <div className="coach-stage">
+                    <div className="meeting-heading">
+                      <strong>Your coach · {item.coachName}</strong>
+                      <button
+                        className="button outline small"
+                        aria-expanded={showClassmates}
+                        onClick={() => setShowClassmates(!showClassmates)}
+                      >
+                        <Users size={15} />
+                        {showClassmates ? 'Hide classmates' : 'Show classmates'}
+                      </button>
+                    </div>
+                    <div className="coach-primary-feed">
+                      {remote.find((p) => p.identity === item.coachId) ? (
+                        <ParticipantVideo
+                          participant={remote.find((p) => p.identity === item.coachId)!}
+                        />
+                      ) : (
+                        <div className="video-disabled">
+                          <Video size={26} />
+                          <span>
+                            {connected
+                              ? 'Waiting for your coach to join video'
+                              : 'Join live video to see and hear your coach'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    {showClassmates && (
+                      <div className="classmate-gallery">
+                        {remote
+                          .filter((p) => p.identity !== item.coachId)
+                          .map((p) => (
+                            <div
+                              key={p.identity}
+                              className={`classmate-feed ${p.isSpeaking ? 'is-speaking' : ''}`}
+                            >
+                              <ParticipantVideo participant={p} />
+                              <span>
+                                {p.name || 'Classmate'} ·{' '}
+                                {p.isMicrophoneEnabled ? 'Mic on' : 'Muted'}
+                              </span>
+                            </div>
+                          ))}
+                        {!remote.some((p) => p.identity !== item.coachId) && (
+                          <p>No classmates have joined video yet.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <CameraAnalyzer
                     exercise={item.exercise}
                     paused={item.paused || item.status !== 'live'}
                     revision={item.revision}
                     stream={stream}
+                    block={item.workout?.find((b) => b.exercise === item.exercise)}
+                    sessionCamera={!demo && services.video}
+                    onEnableCamera={
+                      item.status === 'live'
+                        ? connected
+                          ? () => void toggleCamera()
+                          : () => setShowConsent(true)
+                        : undefined
+                    }
                     onAnalysis={connected ? onAnalysis : undefined}
                     initialReps={
                       item.participants.find((p) => p.id === user.id)?.metric?.revision ===
@@ -674,69 +1002,8 @@ export function Studio({
                       </div>
                     </div>
                   )}
-                  {remote
-                    .filter((p) => p.identity === item.coachId)
-                    .map((p) => (
-                      <div className="coach-feed panel" key={p.identity}>
-                        <SectionTitle title="Your coach" />
-                        <ParticipantVideo participant={p} />
-                      </div>
-                    ))}
                 </>
               )}
-              <div className="call-controls panel">
-                <div>
-                  <button
-                    className="icon-button"
-                    aria-label={mic ? 'Mute microphone' : 'Enable microphone'}
-                    disabled={!connected}
-                    onClick={() => void toggleMic()}
-                  >
-                    {mic ? <Mic size={20} /> : <MicOff size={20} />}
-                  </button>
-                  <button
-                    className="icon-button"
-                    aria-label={camera ? 'Disable video camera' : 'Enable video camera'}
-                    disabled={!connected}
-                    onClick={() => void toggleCamera()}
-                  >
-                    {camera ? <Video size={20} /> : <VideoOff size={20} />}
-                  </button>
-                  <button
-                    className="icon-button"
-                    aria-label="Enable room audio"
-                    disabled={!connected}
-                    onClick={() => void room.current?.startAudio()}
-                  >
-                    <Volume2 size={20} />
-                  </button>
-                  <span>
-                    {demo
-                      ? 'Preview mode'
-                      : connected
-                        ? 'In the live class'
-                        : 'Your devices are off'}
-                  </span>
-                </div>
-                {!coach && item.status === 'live' && (
-                  <button className="button outline" onClick={() => void help(true)}>
-                    <Hand size={17} /> Ask my coach for help
-                  </button>
-                )}
-                {connected && (
-                  <button
-                    className="button outline"
-                    onClick={async () => {
-                      joinGeneration.current++;
-                      await room.current?.disconnect();
-                      setConnected(false);
-                      setStream(null);
-                    }}
-                  >
-                    <LogOut size={17} /> Leave video
-                  </button>
-                )}
-              </div>
             </div>
             <aside className="studio-side">
               <section className="panel coaching-panel">
@@ -784,6 +1051,15 @@ export function Studio({
                         onClick={() => void help(false, focused.id)}
                       >
                         <Check size={16} /> Mark help request addressed
+                      </button>
+                    )}
+                    {focused && connected && (
+                      <button
+                        className="button outline full"
+                        disabled={deviceBusy}
+                        onClick={() => void muteParticipants(focused.id)}
+                      >
+                        <MicOff size={16} /> Mute {focused.name.split(' ')[0]}’s microphone
                       </button>
                     )}
                     <div className="privacy-note">
@@ -885,6 +1161,7 @@ export function Studio({
       {showConsent && (
         <Modal title="A shared space to move together." onClose={() => setShowConsent(false)}>
           <div className="form-stack">
+            <VideoDevices preview preferences={preferences} onChange={setPreferences} />
             <p>
               This is a group class. Your camera and microphone, when enabled, are visible and
               audible to all enrolled participants. Your coach and you can see your movement

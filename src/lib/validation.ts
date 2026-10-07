@@ -48,6 +48,11 @@ export const commandSchema = z.discriminatedUnion('action', [
   }),
   z.object({ action: z.literal('consent'), id: identifier, consent: z.literal(true) }),
   z.object({
+    action: z.literal('muteParticipants'),
+    id: identifier,
+    participantId: identifier.optional(),
+  }),
+  z.object({
     action: z.literal('help'),
     id: identifier,
     requested: z.boolean(),

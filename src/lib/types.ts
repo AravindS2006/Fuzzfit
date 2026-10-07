@@ -29,6 +29,7 @@ export type ClassView = {
   coachId: string;
   coachName: string;
   planId: string | null;
+  workout?: Block[];
   participants: {
     id: string;
     name: string;

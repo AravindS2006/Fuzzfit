@@ -1,5 +1,6 @@
 import type { ExerciseId } from './types';
-export const RULE_VERSION = 'geometry-v1';
+import { defaultWorkoutConfig, normalizeWorkoutConfig, type WorkoutConfig } from './workout-config';
+export const RULE_VERSION = 'geometry-v2';
 export type Landmark = { x: number; y: number; z?: number; visibility?: number; presence?: number };
 export type Analysis = {
   reps: number;
@@ -11,6 +12,8 @@ export type Analysis = {
   angle: number | null;
   tracked: boolean;
   ruleVersion: string;
+  rangeDegrees?: number;
+  lastRepSeconds?: number;
 };
 export type PoseState = {
   reps: number;
@@ -23,6 +26,14 @@ export type PoseState = {
   smoothAngle: number | null;
   side: number | null;
   lastRepAt: number;
+  cycleMin: number;
+  cycleMax: number;
+  lastRange: number;
+  lastDuration: number;
+  previousHoldValid: boolean;
+  bottomSeen: boolean;
+  feedbackUntil: number;
+  feedback: string;
 };
 export function initialPoseState(): PoseState {
   return {
@@ -36,6 +47,14 @@ export function initialPoseState(): PoseState {
     smoothAngle: null,
     side: null,
     lastRepAt: -10000,
+    cycleMin: 180,
+    cycleMax: 0,
+    lastRange: 0,
+    lastDuration: 0,
+    previousHoldValid: false,
+    bottomSeen: false,
+    feedbackUntil: 0,
+    feedback: '',
   };
 }
 type Point = { x: number; y: number };
@@ -53,6 +72,7 @@ function invalid(state: PoseState, cue: string, confidence = 0): Analysis {
   state.smoothAngle = null;
   state.side = null;
   state.lastTimestamp = 0;
+  state.previousHoldValid = false;
   return {
     reps: state.reps,
     holdSeconds: Math.floor(state.holdMs / 1000),
@@ -73,7 +93,9 @@ export function analyzePose(
   width: number,
   height: number,
   paused = false,
+  settings: Partial<WorkoutConfig> = defaultWorkoutConfig(exercise),
 ): Analysis {
+  const config = normalizeWorkoutConfig(exercise, settings);
   if (paused) return invalid(state, 'Tracking paused. Resume when you are ready.');
   if (!Number.isFinite(timestamp) || (state.lastTimestamp && timestamp <= state.lastTimestamp))
     return invalid(state, 'Waiting for a fresh camera frame.');
@@ -107,21 +129,50 @@ export function analyzePose(
           point.x <= 0.985 &&
           point.y >= 0.015 &&
           point.y <= 0.985
-          ? Math.min(point.visibility ?? 0, point.presence ?? 1)
+          ? Math.min(1, point.visibility ?? 0, point.presence ?? 1)
           : 0;
       }),
     );
   const left = confidenceFor(0),
     right = confidenceFor(1);
-  const side = left >= right ? 0 : 1;
-  const confidence = Math.max(left, right);
-  if (!Number.isFinite(confidence) || confidence < 0.65)
+  const preferred = config.side === 'left' ? 0 : config.side === 'right' ? 1 : null;
+  // Keep the same limb throughout a repetition; small confidence changes are not a new view.
+  const side = preferred ?? state.side ?? (left >= right ? 0 : 1);
+  const confidence = side === 0 ? left : right;
+  if (!Number.isFinite(confidence) || confidence < 0.65) {
+    const names: Record<number, string> = {
+      11: 'shoulder',
+      13: 'elbow',
+      15: 'wrist',
+      23: 'hip',
+      25: 'knee',
+      27: 'ankle',
+    };
+    const unclear = needed
+      .filter((i) => {
+        const joint = p[i + side];
+        return (
+          !joint ||
+          !Number.isFinite(joint.x) ||
+          !Number.isFinite(joint.y) ||
+          joint.x < 0.015 ||
+          joint.x > 0.985 ||
+          joint.y < 0.015 ||
+          joint.y > 0.985 ||
+          !Number.isFinite(joint.visibility) ||
+          (joint.visibility ?? 0) < 0.65
+        );
+      })
+      .map((i) => names[i]);
     return invalid(
       state,
-      'Improve lighting and keep all required joints in frame.',
+      unclear.length
+        ? `Keep your ${unclear.join(', ')} visible. Move the camera farther back or improve lighting.`
+        : 'Improve lighting and keep all required joints in frame.',
       Number.isFinite(confidence) ? confidence : 0,
     );
-  if (state.side !== null && state.side !== side && Math.abs(left - right) > 0.15)
+  }
+  if (state.side !== null && state.side !== side)
     return invalid(state, 'Camera view changed. Return to your starting position.', confidence);
   state.side = side;
   const point = (index: number): Point => ({
@@ -155,7 +206,10 @@ export function analyzePose(
     state.candidate = '';
     state.smoothAngle = null;
   }
-  const angle = state.smoothAngle === null ? raw : state.smoothAngle * 0.55 + raw * 0.45;
+  // Time-based smoothing behaves consistently on faster and slower cameras.
+  const weight = 1 - Math.exp(-Math.max(1, gap || 100) / 90);
+  const angle =
+    state.smoothAngle === null ? raw : state.smoothAngle + weight * (raw - state.smoothAngle);
   state.smoothAngle = angle;
   let score: number, cue: string, phase: string;
   if (exercise === 'plank') {
@@ -170,30 +224,65 @@ export function analyzePose(
         ? 'Ask your coach to help align your hips with shoulders and ankles.'
         : 'Hold steady and breathe comfortably.';
     phase = angle >= 155 ? 'holding' : 'adjusting';
-    if (angle >= 155 && gap > 0 && gap <= 750) state.holdMs += gap;
+    if (angle >= 155 && state.previousHoldValid && gap > 0 && gap <= 750) state.holdMs += gap;
+    state.previousHoldValid = angle >= 155;
   } else {
-    const high = exercise === 'squat' ? 157 : 150;
-    const low = exercise === 'squat' ? 112 : exercise === 'pushup' ? 105 : 65;
+    // Validate the exercise position before changing the counter. Standing arm bends
+    // must never count as push-ups, even when the elbow crosses both thresholds.
+    if (exercise === 'pushup') {
+      const alignment = jointAngle(shoulder, hip, ankle);
+      const slope = Math.abs(
+        (Math.atan2(ankle.y - shoulder.y, ankle.x - shoulder.x) * 180) / Math.PI,
+      );
+      if (Math.min(slope, 180 - slope) > 55 || alignment === null)
+        return invalid(
+          state,
+          'Move into a side-on push-up position: hands below shoulders, legs extended.',
+          confidence,
+        );
+    }
+    const high = config.topAngle;
+    const low = config.bottomAngle;
     const candidate = angle >= high ? 'top' : angle <= low ? 'bottom' : 'moving';
     if (candidate !== state.candidate) {
       state.candidate = candidate;
       state.candidateSince = timestamp;
     }
-    const stable = timestamp - state.candidateSince >= 180;
+    const stable = timestamp - state.candidateSince >= 80;
+    if (state.stage === 'ready' && candidate !== 'top') {
+      state.startedAt = timestamp;
+      state.cycleMin = angle;
+      state.cycleMax = high;
+      state.bottomSeen = false;
+      state.stage = 'working';
+    }
+    if (state.stage === 'working') {
+      state.cycleMin = Math.min(state.cycleMin, angle);
+      state.cycleMax = Math.max(state.cycleMax, angle);
+      if (candidate === 'bottom' && stable) state.bottomSeen = true;
+    }
     if (candidate === 'top' && stable) {
       if (
         state.stage === 'working' &&
-        timestamp - state.startedAt >= 800 &&
-        timestamp - state.lastRepAt >= 800
+        (!state.bottomSeen || timestamp - state.startedAt < config.minRepMs)
+      ) {
+        state.feedbackUntil = timestamp + 1800;
+        state.feedback = !state.bottomSeen
+          ? 'Rep not counted. Reach your configured bent position, then return to the start. Adjust the range with your coach if needed.'
+          : 'Rep not counted. Move more slowly and under control.';
+      }
+      if (
+        state.stage === 'working' &&
+        state.bottomSeen &&
+        timestamp - state.startedAt >= config.minRepMs &&
+        timestamp - state.lastRepAt >= config.minRepMs
       ) {
         state.reps += 1;
         state.lastRepAt = timestamp;
+        state.lastRange = Math.round(state.cycleMax - state.cycleMin);
+        state.lastDuration = (timestamp - state.startedAt) / 1000;
       }
       state.stage = 'ready';
-    }
-    if (candidate === 'bottom' && stable && state.stage === 'ready') {
-      state.stage = 'working';
-      state.startedAt = timestamp;
     }
     phase =
       state.stage === 'seek'
@@ -210,8 +299,24 @@ export function analyzePose(
     score = 90;
     cue =
       state.stage === 'seek'
-        ? 'Begin at the extended starting position.'
-        : 'Move steadily through a comfortable range.';
+        ? exercise === 'squat'
+          ? 'Stand tall, feet about shoulder-width apart. Turn your side to the camera.'
+          : exercise === 'curl'
+            ? 'Stand tall with your working arm extended beside you.'
+            : 'Start with arms extended and your body in a straight line.'
+        : candidate === 'top'
+          ? exercise === 'curl'
+            ? 'Bend your elbow to bring the weight toward your shoulder, keeping the upper arm still.'
+            : exercise === 'squat'
+              ? 'Bend hips and knees to sit back, then return to standing.'
+              : 'Bend your elbows to lower your chest, then press back up.'
+          : candidate === 'bottom'
+            ? exercise === 'curl'
+              ? 'Lower the weight slowly until your arm is extended.'
+              : 'Return to the extended starting position under control.'
+            : state.cycleMin > low
+              ? 'Continue through your coach-approved range, then return fully to the start.'
+              : 'Return to the starting position to finish this rep.';
     if (exercise === 'squat') {
       const lean =
         (Math.atan2(Math.abs(shoulder.x - hip.x), Math.abs(shoulder.y - hip.y)) * 180) / Math.PI;
@@ -238,6 +343,7 @@ export function analyzePose(
       if (upperArmLean > 35) cue = 'Keep your upper arm steadier and reduce the weight if needed.';
     }
   }
+  if (timestamp < state.feedbackUntil && score >= 75) cue = state.feedback;
   state.lastTimestamp = timestamp;
   return {
     reps: state.reps,
@@ -249,6 +355,8 @@ export function analyzePose(
     angle: Math.round(angle),
     tracked: true,
     ruleVersion: RULE_VERSION,
+    rangeDegrees: state.lastRange,
+    lastRepSeconds: state.lastDuration,
   };
 }
 export const skeletonConnections = [

@@ -66,6 +66,10 @@ type Command = Record<string, unknown>;
 export function Workspace({ initial, view }: { initial: WorkspaceData; view: string }) {
   const { dateLabel, timeLabel, timeZone } = useTimeFormat();
   const searchInput = useRef<HTMLInputElement>(null);
+  const sidebar = useRef<HTMLElement>(null);
+  const menuTrigger = useRef<HTMLButtonElement>(null);
+  const navigationId = useId();
+  const [smallScreen, setSmallScreen] = useState(false);
   const mutationVersion = useRef(0);
   const pendingMutations = useRef(0);
   useEffect(() => {
@@ -87,6 +91,47 @@ export function Workspace({ initial, view }: { initial: WorkspaceData; view: str
     [toast, setToast] = useState(''),
     [syncWarning, setSyncWarning] = useState(''),
     [mobileMenu, setMobileMenu] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 760px)');
+    const update = () => {
+      setSmallScreen(media.matches);
+      if (!media.matches) setMobileMenu(false);
+    };
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+  useEffect(() => {
+    if (!mobileMenu || !smallScreen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusable = () =>
+      Array.from(
+        sidebar.current?.querySelectorAll<HTMLElement>('a[href], button:not(:disabled)') ?? [],
+      ).filter((el) => el.getClientRects().length > 0);
+    focusable()[0]?.focus();
+    const handle = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileMenu(false);
+      if (event.key === 'Tab') {
+        const elements = focusable();
+        const first = elements[0],
+          last = elements.at(-1);
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    window.addEventListener('keydown', handle);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handle);
+      menuTrigger.current?.focus();
+    };
+  }, [mobileMenu, smallScreen]);
   useEffect(() => {
     if (initial.demo) return;
     let active = true;
@@ -166,6 +211,7 @@ export function Workspace({ initial, view }: { initial: WorkspaceData; view: str
     setTimeout(() => setToast(''), 5000);
   }
   function show(name: string) {
+    setMobileMenu(false);
     setError('');
     setInviteResult('');
     setModal(name);
@@ -294,7 +340,30 @@ export function Workspace({ initial, view }: { initial: WorkspaceData; view: str
   const searchPlans = data.plans.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()));
   return (
     <div className="app-layout">
-      <aside className={`sidebar ${mobileMenu ? 'open' : ''}`}>
+      {smallScreen && mobileMenu && (
+        <button
+          className="navigation-backdrop"
+          aria-label="Dismiss navigation"
+          onClick={() => setMobileMenu(false)}
+          tabIndex={-1}
+        />
+      )}
+      <aside
+        ref={sidebar}
+        id={navigationId}
+        className={`sidebar ${mobileMenu ? 'open' : ''}`}
+        inert={smallScreen && !mobileMenu}
+        role={smallScreen && mobileMenu ? 'dialog' : undefined}
+        aria-modal={smallScreen && mobileMenu ? true : undefined}
+        aria-label="Workspace navigation"
+      >
+        <button
+          className="icon-button navigation-close"
+          aria-label="Close navigation"
+          onClick={() => setMobileMenu(false)}
+        >
+          <X size={22} />
+        </button>
         <Link href={base} className="brand-link">
           <Brand />
         </Link>
@@ -361,11 +430,14 @@ export function Workspace({ initial, view }: { initial: WorkspaceData; view: str
           </button>
         </div>
       </aside>
-      <div className="main-shell">
+      <div className="main-shell" inert={smallScreen && mobileMenu}>
         <header className="topbar">
           <button
             className="icon-button mobile-toggle"
+            ref={menuTrigger}
             aria-label="Open navigation"
+            aria-expanded={mobileMenu}
+            aria-controls={navigationId}
             onClick={() => setMobileMenu(!mobileMenu)}
           >
             <Menu size={21} />
@@ -1600,6 +1672,20 @@ function CameraPractice() {
         title="Meet your camera coach."
         text="Practice locally with confidence-aware movement feedback."
       />
+      <label className="practice-movement-selector">
+        Choose your movement
+        <select
+          aria-label="Exercise to practice"
+          value={exercise}
+          onChange={(event) => setExercise(event.target.value as ClassView['exercise'])}
+        >
+          {exercises.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.name}
+            </option>
+          ))}
+        </select>
+      </label>
       <div className="practice-grid">
         <Camera exercise={exercise} />
         <aside className="panel practice-guide">

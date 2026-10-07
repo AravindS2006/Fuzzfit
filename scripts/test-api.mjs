@@ -136,7 +136,22 @@ try {
     cue: 'Continue comfortably.',
   };
   await check('/api/metrics', metric, trainee);
+  await check('/api/command', { action: 'muteParticipants', id: item.id }, trainee, 403);
+  await check('/api/command', { action: 'muteParticipants', id: item.id }, other, 404);
+  await check(
+    '/api/command',
+    { action: 'muteParticipants', id: item.id, participantId: other.id },
+    coach,
+    400,
+  );
   await check('/api/metrics', { ...metric, reps: 1 }, trainee, 409);
+  await check('/api/command', { action: 'classControl', id: item.id, control: 'pause' }, coach);
+  await check('/api/metrics', { ...metric, reps: 3 }, trainee, 409);
+  await check('/api/command', { action: 'classControl', id: item.id, control: 'resume' }, coach);
+  const resumed = await check(`/api/classes/${item.id}`, undefined, coach);
+  assert.equal(resumed.revision, metric.revision);
+  await check('/api/metrics', metric, trainee);
+  await check('/api/metrics', { ...metric, holdSeconds: 100 }, trainee, 400);
   await check(
     '/api/command',
     {

@@ -199,7 +199,9 @@ test('a trainee follows an invitation through signup, onboarding, enrollment, an
     await trainee.getByRole('link', { name: 'Sessions', exact: true }).click();
     await expect(trainee.getByText('A shared journey', { exact: true })).toBeVisible();
     await trainee.getByRole('button', { name: 'Open studio', exact: true }).click();
-    await expect(trainee.getByRole('button', { name: 'Enable camera' })).toBeVisible();
+    await expect(
+      trainee.getByRole('button', { name: /Enable camera|Turn on session camera/ }),
+    ).toBeVisible();
     const videoButton = trainee.getByRole('button', { name: 'Join live video', exact: true });
     await expect(videoButton).toBeVisible();
     const workspace = await coachContext.request.get('http://localhost:3000/api/workspace');

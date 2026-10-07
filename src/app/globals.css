@@ -472,6 +472,16 @@ small {
   display: flex;
   min-height: 100vh;
 }
+.navigation-close {
+  display: none;
+}
+.navigation-backdrop {
+  position: fixed;
+  inset: 0;
+  background: #14271e80;
+  border: 0;
+  z-index: 19;
+}
 .sidebar {
   width: 229px;
   position: fixed;
@@ -483,6 +493,357 @@ small {
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
+}
+
+/* Guided workout and meeting controls remain readable on a phone. */
+.workout-guide {
+  border: 1px solid var(--line);
+  background: #f5f8f1;
+  border-radius: 14px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+.guide-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  padding: 16px;
+  color: var(--ink);
+}
+.guide-heading span {
+  display: grid;
+  gap: 5px;
+}
+.guide-heading small {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #4b6238;
+}
+.guide-heading strong {
+  font-size: 17px;
+}
+.movement-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 16px;
+}
+.movement-steps > div {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+}
+.movement-steps svg {
+  width: 100%;
+  height: 120px;
+}
+.movement-steps p {
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 6px 0;
+  color: #354b3c;
+}
+.position-instruction {
+  padding: 0 16px 14px;
+  margin: 14px 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #354b3c;
+}
+.workout-setup {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 16px;
+  background: white;
+}
+.workout-setup-title {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 14px;
+}
+.workout-setup-title span {
+  font-size: 12px;
+  color: #4b6238;
+}
+.workout-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.workout-fields label,
+.video-device-settings > label {
+  display: grid;
+  gap: 7px;
+  font-size: 12px;
+  color: #354b3c;
+}
+.workout-fields input,
+.workout-fields select,
+.video-device-settings select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid #bcc9b5;
+  border-radius: 7px;
+  background: #fff;
+  color: var(--ink);
+  padding: 9px;
+  font-size: 14px;
+}
+.tracking-settings {
+  margin-top: 14px;
+  font-size: 12px;
+}
+.tracking-settings summary {
+  cursor: pointer;
+  padding: 8px 0;
+  color: #354b3c;
+}
+.tracking-settings p {
+  line-height: 1.7;
+}
+.set-progress {
+  background: #eff6e4;
+  border: 1px solid #c2d6a7;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 14px 0;
+}
+.set-progress > div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.set-progress span {
+  font-size: 12px;
+  color: #354b3c;
+}
+.set-progress progress {
+  display: block;
+  width: 100%;
+  height: 12px;
+  accent-color: #527340;
+  margin: 15px 0;
+}
+.set-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.movement-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 14px 0;
+  font-size: 12px;
+  color: #354b3c;
+}
+.set-results {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.set-results h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+}
+.set-results table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.set-results th,
+.set-results td {
+  padding: 10px 5px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+.camera-module .camera-tools {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.camera-module .camera-tools > div {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.camera-placeholder h3 {
+  max-width: 340px;
+}
+.coach-stage {
+  margin-bottom: 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: white;
+}
+.meeting-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  gap: 10px;
+}
+.meeting-heading strong {
+  font-size: 14px;
+}
+.coach-primary-feed {
+  position: relative;
+  height: 300px;
+  background: #26302a;
+}
+.classmate-gallery {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+.classmate-feed {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: #26302a;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.classmate-feed > span {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  background: #ffffffee;
+  color: #354b3c;
+  font-size: 11px;
+  padding: 5px 8px;
+  border-radius: 4px;
+}
+.is-speaking {
+  outline: 3px solid #7fab56;
+  outline-offset: -3px;
+}
+.video-device-settings {
+  display: grid;
+  gap: 14px;
+}
+.video-device-settings > .checkbox-label {
+  display: flex;
+}
+.prejoin-preview {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: #26302a;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.prejoin-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform: scaleX(-1);
+}
+.prejoin-preview > span {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: white;
+}
+.meeting-settings {
+  padding: 16px;
+  margin: 16px 0;
+}
+.meeting-settings > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.meeting-settings fieldset {
+  border: 0;
+  padding: 12px 0 0;
+  margin: 0;
+}
+.live-studio > .call-controls {
+  margin: 16px 0 22px;
+  flex-wrap: wrap;
+}
+.live-studio > .call-controls > div {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.live-studio > .call-controls .button {
+  min-height: 42px;
+  font-size: 12px;
+}
+.live-studio > .call-controls > div > span {
+  font-size: 12px;
+}
+.coach-stage:fullscreen,
+.participant-grid:fullscreen {
+  background: #172b20;
+  padding: 20px;
+  overflow: auto;
+}
+.coach-stage:fullscreen .coach-primary-feed {
+  height: calc(100vh - 110px);
+}
+@media (max-width: 760px) {
+  .navigation-close {
+    display: grid;
+    position: absolute;
+    right: 12px;
+    top: 12px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .sidebar {
+    overflow-y: auto;
+  }
+  .sidebar .brand-link {
+    margin-right: 36px;
+  }
+  .movement-steps {
+    gap: 6px;
+    padding: 0 10px;
+  }
+  .movement-steps > div {
+    padding: 6px;
+  }
+  .movement-steps svg {
+    height: 88px;
+  }
+  .movement-steps p {
+    font-size: 11px;
+  }
+  .workout-fields {
+    gap: 8px;
+  }
+  .workout-setup,
+  .set-progress {
+    padding: 12px;
+  }
+  .guide-heading strong {
+    font-size: 15px;
+  }
+  .coach-primary-feed {
+    height: 220px;
+  }
+  .live-studio > .call-controls {
+    padding: 12px;
+  }
+  .live-studio > .call-controls .button {
+    flex: 1 1 auto;
+  }
 }
 .studio-selector {
   margin: 0 18px 33px;
@@ -1623,6 +1984,23 @@ small {
   grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr);
   gap: 24px;
   align-items: start;
+}
+.practice-movement-selector {
+  display: grid;
+  gap: 8px;
+  max-width: 350px;
+  margin-bottom: 20px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.practice-movement-selector select {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  min-height: 44px;
+  color: var(--ink);
 }
 .camera-module {
   min-width: 0;

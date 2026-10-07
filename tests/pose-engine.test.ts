@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { analyzePose, initialPoseState, jointAngle, type Landmark } from '../src/lib/pose-engine';
 import { commandSchema, metricSchema } from '../src/lib/validation';
+import { normalizeWorkoutConfig } from '../src/lib/workout-config';
 function squat(angle: number, width = 640, height = 480): Landmark[] {
   const points = Array.from({ length: 33 }, () => ({
     x: 0.5,
@@ -95,6 +96,92 @@ describe('confidence-aware pose engine', () => {
     expect(result.reps).toBe(1);
     frames(state, 180, 4500, 20);
     expect(state.reps).toBe(1);
+  });
+  it('counts a natural continuous squat without requiring a long pause at the bottom', () => {
+    const state = initialPoseState();
+    const angles = [180, 180, 180, 165, 140, 115, 95, 95, 110, 135, 160, 175, 180, 180];
+    angles.forEach((angle, index) =>
+      analyzePose([squat(angle)], 'squat', state, 100 + index * 100, 640, 480),
+    );
+    expect(state.reps).toBe(1);
+    expect(state.lastRange).toBeGreaterThan(50);
+    expect(state.lastDuration).toBeGreaterThanOrEqual(0.6);
+  });
+  it('rejects a partial repetition that never reaches the configured bent endpoint', () => {
+    const state = initialPoseState();
+    frames(state, 180, 100, 4);
+    frames(state, 130, 500, 5);
+    expect(frames(state, 180, 1000, 6).reps).toBe(0);
+  });
+  it('keeps the same limb when left and right visibility alternate slightly', () => {
+    const state = initialPoseState();
+    for (let i = 0; i < 30; i++) {
+      const pose = squat(i < 8 || i >= 19 ? 180 : 95);
+      for (const index of [11, 23, 25, 27]) {
+        pose[index].visibility = i % 2 ? 0.75 : 0.95;
+        pose[index + 1].visibility = i % 2 ? 0.95 : 0.75;
+      }
+      analyzePose([pose], 'squat', state, 100 + i * 100, 640, 480);
+      expect(state.side).toBe(0);
+    }
+    expect(state.reps).toBe(1);
+  });
+  it('supports a coach-configured comfortable range and selected limb', () => {
+    const state = initialPoseState();
+    const config = { topAngle: 145, bottomAngle: 125, side: 'right' as const };
+    for (let i = 0; i < 30; i++)
+      analyzePose(
+        [squat(i < 8 || i >= 19 ? 170 : 115)],
+        'squat',
+        state,
+        100 + i * 100,
+        640,
+        480,
+        false,
+        config,
+      );
+    expect(state.reps).toBe(1);
+    expect(state.side).toBe(1);
+  });
+  it('rejects impossibly fast cycles even when the endpoints are visible', () => {
+    const state = initialPoseState();
+    for (let i = 0; i < 15; i++)
+      analyzePose([squat(i < 4 || i >= 9 ? 180 : 70)], 'squat', state, 100 + i * 30, 640, 480);
+    expect(state.reps).toBe(0);
+  });
+  it('does not allow standing arm bends to complete a pending push-up', () => {
+    const state = initialPoseState();
+    Object.assign(state, {
+      stage: 'working',
+      candidate: 'top',
+      candidateSince: 100,
+      startedAt: 100,
+      bottomSeen: true,
+      smoothAngle: 180,
+    });
+    const pose = squat(180);
+    for (const side of [0, 1]) {
+      pose[13 + side] = { x: 0.5 + side * 0.01, y: 0.4, visibility: 0.95, presence: 0.95 };
+      pose[15 + side] = { x: 0.5 + side * 0.01, y: 0.6, visibility: 0.95, presence: 0.95 };
+      pose[23 + side].y = 0.6;
+    }
+    const result = analyzePose([pose], 'pushup', state, 1200, 640, 480);
+    expect(result.tracked).toBe(false);
+    expect(result.reps).toBe(0);
+    expect(result.cue).toContain('push-up position');
+  });
+  it('bounds corrupted saved settings and keeps angle endpoints separate', () => {
+    const result = normalizeWorkoutConfig('squat', {
+      sets: NaN,
+      target: 999,
+      rest: -10,
+      topAngle: 140,
+      bottomAngle: 160,
+    });
+    expect(result.sets).toBe(3);
+    expect(result.target).toBe(120);
+    expect(result.rest).toBe(0);
+    expect(result.bottomAngle).toBeLessThanOrEqual(result.topAngle - 25);
   });
   it('does not count when observation starts at the bottom', () => {
     const state = initialPoseState();

@@ -50,6 +50,7 @@ export async function workspaceData(userId: string): Promise<WorkspaceData> {
     coachId: c.studio.ownerId,
     coachName: c.studio.owner.name,
     planId: c.planId,
+    workout: (plans.find((p) => p.id === c.planId)?.blocks ?? []) as unknown as Block[],
     participants: c.enrollments
       .filter((e) => user.role === 'coach' || e.userId === userId)
       .map((e) => ({
