@@ -80,7 +80,9 @@ test('workout settings teach the selected movement and persist without opening t
   await page.getByRole('button', { name: 'Workout settings', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Workout settings' })).toBeVisible();
   await expect(
-    page.getByText('Stand tall, feet about shoulder-width apart.', { exact: false }),
+    page
+      .getByRole('dialog')
+      .getByText('Stand tall with your feet about shoulder-width apart.', { exact: true }),
   ).toBeVisible();
   await page.getByLabel('Sets', { exact: true }).fill('2');
   await page.getByLabel('Reps per set').fill('8');
@@ -100,7 +102,16 @@ test('workout settings teach the selected movement and persist without opening t
   await page.getByRole('button', { name: 'Workout settings', exact: true }).click();
   await expect(page.getByLabel('Seconds per set')).toHaveValue('30');
   await expect(
-    page.getByText('Only time observed in alignment counts.', { exact: false }),
+    page.getByText('Hold a side-on plank with shoulders, hips, and ankles aligned.', {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Close dialog' }).click();
+  await page.getByLabel('Exercise to practice').selectOption('sideplank');
+  await page.getByRole('button', { name: 'Workout settings', exact: true }).click();
+  await expect(page.getByLabel('Seconds per set')).toHaveValue('30');
+  await expect(
+    page.getByText('Keep hips lifted and breathe comfortably.', { exact: false }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Close dialog' }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(

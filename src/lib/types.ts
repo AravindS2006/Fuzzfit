@@ -1,4 +1,5 @@
-export type ExerciseId = 'squat' | 'pushup' | 'curl' | 'plank';
+import type { ProfileExerciseId } from './exercise-profiles';
+export type ExerciseId = ProfileExerciseId;
 export type Person = { id: string; name: string; email: string; role: string; goal: string };
 export type Block = { exercise: ExerciseId; sets: number; reps: number; rest: number };
 export type Plan = { id: string; name: string; description: string; blocks: Block[] };

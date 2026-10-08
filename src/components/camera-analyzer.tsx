@@ -36,29 +36,15 @@ import {
   MAX_START_FRAME_GAP_MS,
 } from '@/lib/workout-start';
 import { workoutSetProgress } from '@/lib/workout-progress';
+import { exerciseIds, getExerciseProfile, isHoldExercise } from '@/lib/exercise-profiles';
 
-const movementSteps: Record<ExerciseId, [string, string, string]> = {
-  squat: [
-    'Stand tall, feet about shoulder-width apart.',
-    'Bend hips and knees, sitting back within a comfortable range.',
-    'Press through your feet and return to standing to complete one rep.',
-  ],
-  pushup: [
-    'Place hands below shoulders and extend your legs. Keep your body in a line.',
-    'Bend your elbows to lower your chest under control.',
-    'Press back to extended arms. Ask your coach about an easier variation if needed.',
-  ],
-  curl: [
-    'Stand tall with your working arm extended and a light weight.',
-    'Bend your elbow toward your shoulder, keeping your upper arm still.',
-    'Lower the weight slowly to the starting position to complete one rep.',
-  ],
-  plank: [
-    'Place forearms on the floor, elbows below shoulders.',
-    'Extend your legs and align your shoulders, hips, and ankles.',
-    'Hold steadily and breathe. Only time observed in alignment counts.',
-  ],
-};
+const movementSteps = Object.fromEntries(
+  exerciseIds.map((id) => {
+    const profile = getExerciseProfile(id);
+    return [id, [profile.startCue, profile.moveCue, profile.returnCue]];
+  }),
+) as Record<ExerciseId, [string, string, string]>;
+
 const empty: Analysis = {
   reps: 0,
   holdSeconds: 0,
@@ -120,6 +106,12 @@ export function CameraAnalyzer({
   const [countdown, setCountdown] = useState<number | null>(null);
   const [countdownPaused, setCountdownPaused] = useState(false);
   const [cueExpanded, setCueExpanded] = useState(false);
+  const [modelVariant, setModelVariant] = useState<'lite' | 'full' | 'heavy'>('full');
+  const modelVariantRef = useRef(modelVariant);
+  modelVariantRef.current = modelVariant;
+  const [modelInfo, setModelInfo] = useState({ variant: 'full', delegate: '', fps: 0 });
+  const frameStats = useRef({ frames: 0, since: 0 });
+  const frameRequest = useRef<number | null>(null);
   const armedRef = useRef(false);
   const armedAt = useRef(0);
   const startClock = useRef(initialStartCountdown());
@@ -163,6 +155,9 @@ export function CameraAnalyzer({
     generation.current += 1;
     if (timer.current) clearInterval(timer.current);
     timer.current = null;
+    if (frameRequest.current !== null)
+      video.current?.cancelVideoFrameCallback?.(frameRequest.current);
+    frameRequest.current = null;
     worker.current?.terminate();
     worker.current = null;
     inFlight.current = false;
@@ -277,13 +272,15 @@ export function CameraAnalyzer({
     state.current = {
       ...initialPoseState(),
       ...tally.current,
-      stage: exerciseRef.current === 'plank' ? 'seek' : 'ready',
+      stage: isHoldExercise(exerciseRef.current) ? 'seek' : 'ready',
       side: preview.side,
+      sideStartSeen: [...preview.sideStartSeen],
+      sideStartSource: [...preview.sideStartSource],
       smoothAngle: preview.smoothAngle,
       candidate: preview.candidate,
       candidateSince: preview.candidateSince,
       lastTimestamp: timestamp,
-      previousHoldValid: exerciseRef.current === 'plank',
+      previousHoldValid: isHoldExercise(exerciseRef.current),
     };
     cancelStart();
     samples.current = { count: 0, total: 0 };
@@ -335,7 +332,7 @@ export function CameraAnalyzer({
     setCompletedSets([]);
     let saved: Partial<WorkoutConfig> = {};
     try {
-      saved = JSON.parse(localStorage.getItem(`fuzzfit-workout-${exercise}`) || '{}');
+      saved = JSON.parse(localStorage.getItem(`fuzzfit-workout-v3-${exercise}`) || '{}');
     } catch {}
     setConfig(
       normalizeWorkoutConfig(exercise, {
@@ -461,7 +458,13 @@ export function CameraAnalyzer({
           lastFrameAt.current = performance.now();
           staleFrame.current = false;
           setStatus('ready');
-          timer.current = setInterval(async () => {
+          frameStats.current = { frames: 0, since: performance.now() };
+          setModelInfo({
+            variant: data.variant ?? modelVariantRef.current,
+            delegate: data.delegate ?? '',
+            fps: 0,
+          });
+          const captureFrame = async () => {
             const v = video.current;
             if (
               !v ||
@@ -494,7 +497,16 @@ export function CameraAnalyzer({
             } catch {
               inFlight.current = false;
             }
-          }, 100);
+          };
+          const v = video.current;
+          if (v?.requestVideoFrameCallback) {
+            const onFrame = () => {
+              if (generation.current !== run) return;
+              frameRequest.current = v.requestVideoFrameCallback(onFrame);
+              void captureFrame();
+            };
+            frameRequest.current = v.requestVideoFrameCallback(onFrame);
+          } else timer.current = setInterval(() => void captureFrame(), 33);
         }
         if (data.type === 'result') {
           inFlight.current = false;
@@ -512,6 +524,14 @@ export function CameraAnalyzer({
           }
           lastFrameAt.current = data.timestamp;
           staleFrame.current = false;
+          frameStats.current.frames++;
+          if (now - frameStats.current.since >= 1000) {
+            const fps = Math.round(
+              (frameStats.current.frames * 1000) / (now - frameStats.current.since),
+            );
+            setModelInfo((previous) => ({ ...previous, fps }));
+            frameStats.current = { frames: 0, since: now };
+          }
           const activeSet = modeRef.current === 'active';
           const result = analyzePose(
             data.poses,
@@ -522,12 +542,13 @@ export function CameraAnalyzer({
             data.height,
             pausedRef.current,
             configRef.current,
+            data.worldPoses,
           );
           const continuing = armedRef.current && startClock.current.acquired;
           const ready =
             canStartWorkout(result, exerciseRef.current, configRef.current, continuing) &&
             (continuing ||
-              exerciseRef.current === 'plank' ||
+              isHoldExercise(exerciseRef.current) ||
               previewState.current.stage === 'ready');
           if (armedRef.current) {
             startClock.current = advanceStartCountdown(
@@ -583,7 +604,11 @@ export function CameraAnalyzer({
           }
           setAnalysis(result);
           analysisCallback.current?.(result);
-          draw(data.poses[0] ?? [], data.width, data.height);
+          draw(
+            result.filteredLandmarks ?? (result.tracked ? (data.poses[0] ?? []) : []),
+            data.width,
+            data.height,
+          );
           if (modeRef.current === 'setup' || modeRef.current === 'active')
             announce(
               result.cue,
@@ -601,8 +626,8 @@ export function CameraAnalyzer({
         setError(
           'Pose tracking took too long to load. Check your connection and retry camera analysis.',
         );
-      }, 20000);
-      task.postMessage({ type: 'init' });
+      }, 45000);
+      task.postMessage({ type: 'init', variant: modelVariantRef.current });
     } catch (err) {
       if (generation.current !== run) return;
       stop();
@@ -648,6 +673,7 @@ export function CameraAnalyzer({
     }
   }
   const definition = exercises.find((e) => e.id === exercise)!;
+  const profile = getExerciseProfile(exercise);
   const progress = Math.floor(
     workoutSetProgress(exercise, analysis.reps, tally.current.holdMs, baseline.current),
   );
@@ -655,7 +681,7 @@ export function CameraAnalyzer({
     const next = normalizeWorkoutConfig(exercise, { ...config, ...change });
     setConfig(next);
     try {
-      localStorage.setItem(`fuzzfit-workout-${exercise}`, JSON.stringify(next));
+      localStorage.setItem(`fuzzfit-workout-v3-${exercise}`, JSON.stringify(next));
     } catch {}
   };
   const cue =
@@ -704,9 +730,7 @@ export function CameraAnalyzer({
               <Camera size={32} />
             </div>
             <h3>Your workout camera</h3>
-            <p>
-              {definition.view}. {definition.instructions[0]}
-            </p>
+            <p>{definition.view}</p>
             <button
               className="button lime"
               disabled={sessionCamera && !onEnableCamera}
@@ -755,9 +779,9 @@ export function CameraAnalyzer({
               aria-label="Live workout scores"
             >
               <div>
-                <span>{exercise === 'plank' ? 'Hold time' : 'Total reps'}</span>
+                <span>{isHoldExercise(exercise) ? 'Hold time' : 'Total reps'}</span>
                 <strong data-testid="cumulative-reps">
-                  {exercise === 'plank'
+                  {isHoldExercise(exercise)
                     ? `${analysis.holdSeconds}s`
                     : String(analysis.reps).padStart(2, '0')}
                 </strong>
@@ -826,12 +850,12 @@ export function CameraAnalyzer({
                   ? 'Return to start position'
                   : 'Wait for Go'
                 : mode === 'setup'
-                  ? `${config.target} ${exercise === 'plank' ? 'seconds' : 'reps'} · Start when ready`
+                  ? `${config.target} ${isHoldExercise(exercise) ? 'seconds' : 'reps'} · Start when ready`
                   : mode === 'rest'
                     ? `Recovery · ${restLeft}s remaining`
                     : mode === 'complete'
                       ? `${completedSets.length} sets finished`
-                      : `${progress} / ${config.target} ${exercise === 'plank' ? 'seconds' : 'reps'}`}
+                      : `${progress} / ${config.target} ${isHoldExercise(exercise) ? 'seconds' : 'reps'}`}
             </span>
           </div>
           <progress
@@ -977,7 +1001,7 @@ export function CameraAnalyzer({
                   />
                 </label>
                 <label>
-                  {exercise === 'plank' ? 'Seconds per set' : 'Reps per set'}
+                  {isHoldExercise(exercise) ? 'Seconds per set' : 'Reps per set'}
                   <input
                     type="number"
                     min={1}
@@ -1002,9 +1026,39 @@ export function CameraAnalyzer({
               <details className="tracking-settings">
                 <summary>Adjust tracking with your coach</summary>
                 <p>
-                  Use a side view and choose your visible arm or leg. Ask your coach to set the
-                  movement range before changing these camera angle estimates.
+                  {profile.cameraCue}. Choose the arm or leg you want to track. Your coach can
+                  adjust the range to your movement. Minor form issues lower quality and show a
+                  correction.
                 </p>
+                <label className="model-quality-field">
+                  Tracking quality
+                  <select
+                    value={modelVariant}
+                    disabled={mode !== 'setup'}
+                    onChange={(event) => {
+                      const next = event.target.value as typeof modelVariant;
+                      modelVariantRef.current = next;
+                      setModelVariant(next);
+                      cancelStart();
+                      if (status !== 'off') {
+                        const shared = ownStream.current
+                          ? undefined
+                          : (currentStream.current ?? undefined);
+                        void start(shared);
+                      }
+                    }}
+                  >
+                    <option value="full">Accurate · Recommended</option>
+                    <option value="heavy">High precision · Faster devices</option>
+                    <option value="lite">Performance · Lower accuracy</option>
+                  </select>
+                </label>
+                {status === 'ready' && (
+                  <p className="microcopy">
+                    Tracking: {modelInfo.fps} analyzed frames/sec. If tracking feels slow, use
+                    Accurate or Performance mode.
+                  </p>
+                )}
                 <div className="workout-fields">
                   <label>
                     Body side
@@ -1020,13 +1074,13 @@ export function CameraAnalyzer({
                       <option value="right">Right</option>
                     </select>
                   </label>
-                  {exercise !== 'plank' && (
+                  {!isHoldExercise(exercise) && (
                     <>
                       <label>
-                        Extended angle (°)
+                        Higher endpoint (°)
                         <input
                           type="number"
-                          min={130}
+                          min={profile.signal === 'shoulder' ? 50 : 110}
                           max={175}
                           value={config.topAngle}
                           disabled={mode !== 'setup'}
@@ -1034,10 +1088,10 @@ export function CameraAnalyzer({
                         />
                       </label>
                       <label>
-                        Bent angle (°)
+                        Lower endpoint (°)
                         <input
                           type="number"
-                          min={35}
+                          min={profile.signal === 'shoulder' ? 5 : 35}
                           max={config.topAngle - 25}
                           value={config.bottomAngle}
                           disabled={mode !== 'setup'}
@@ -1048,7 +1102,7 @@ export function CameraAnalyzer({
                         Minimum rep time (ms)
                         <input
                           type="number"
-                          min={500}
+                          min={350}
                           max={3000}
                           step={100}
                           value={config.minRepMs}
@@ -1095,6 +1149,26 @@ export function CameraAnalyzer({
                   <span>
                     Joint angle: <b>{analysis.angle === null ? '—' : `${analysis.angle}°`}</b>
                   </span>
+                  <span>
+                    Last rep quality:{' '}
+                    <b>
+                      {analysis.lastRepQuality == null ? '—' : `${analysis.lastRepQuality}/100`}
+                    </b>
+                  </span>
+                  <span>
+                    Tracked side:{' '}
+                    <b>
+                      {analysis.trackedSide ??
+                        (state.current.side === 0
+                          ? 'left'
+                          : state.current.side === 1
+                            ? 'right'
+                            : 'acquiring')}
+                    </b>
+                  </span>
+                  {analysis.rejectionReason && (
+                    <span role="status">{analysis.rejectionReason}</span>
+                  )}
                 </div>
                 <button
                   className="button outline"
@@ -1120,7 +1194,7 @@ export function CameraAnalyzer({
                   <thead>
                     <tr>
                       <th>Set</th>
-                      <th>{exercise === 'plank' ? 'Seconds' : 'Reps'}</th>
+                      <th>{isHoldExercise(exercise) ? 'Seconds' : 'Reps'}</th>
                       <th>Target</th>
                       <th>Form estimate</th>
                     </tr>

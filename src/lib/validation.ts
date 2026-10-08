@@ -1,5 +1,6 @@
 import { z } from 'zod';
-export const exerciseSchema = z.enum(['squat', 'pushup', 'curl', 'plank']);
+import { exerciseIds } from './exercise-profiles';
+export const exerciseSchema = z.enum(exerciseIds);
 const identifier = z.string().min(1).max(100);
 const block = z.object({
   exercise: exerciseSchema,

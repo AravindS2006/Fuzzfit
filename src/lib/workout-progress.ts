@@ -1,4 +1,5 @@
 import type { ExerciseId } from './types';
+import { isHoldExercise } from './exercise-profiles';
 
 export function workoutSetProgress(
   exercise: ExerciseId,
@@ -9,6 +10,6 @@ export function workoutSetProgress(
   // Keep observed hold time precise until presentation so each set gets its full target.
   return Math.max(
     0,
-    exercise === 'plank' ? (holdMs - baseline.holdMs) / 1000 : reps - baseline.reps,
+    isHoldExercise(exercise) ? (holdMs - baseline.holdMs) / 1000 : reps - baseline.reps,
   );
 }

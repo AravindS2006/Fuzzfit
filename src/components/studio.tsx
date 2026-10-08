@@ -31,6 +31,7 @@ import type { Analysis } from '@/lib/pose-engine';
 import type { ClassView, MessageView, Person, WorkspaceData } from '@/lib/types';
 import { apiCommand, fetchJson } from '@/lib/client';
 import { exercises, exerciseName } from '@/lib/catalog';
+import { isHoldExercise } from '@/lib/exercise-profiles';
 import { Avatar, EmptyState, Modal } from './ui';
 import { Presentation, ScreenShareButton } from './meeting-presentation';
 import { VideoDevices, type DevicePreferences } from './video-devices';
@@ -88,9 +89,11 @@ export function Studio({
   const [chatOpen, setChatOpen] = useState(false);
   const [presenting, setPresenting] = useState(false);
   const [coachVideoLayout, setCoachVideoLayout] = useState<CoachVideoLayout>({
-    size: 'medium',
+    size: 'small',
     minimized: false,
   });
+  const coachVideoSizeRef = useRef<HTMLSelectElement>(null);
+  const enlargeCoachVideoRef = useRef<HTMLButtonElement>(null);
   const meetingRef = useRef<HTMLDivElement>(null);
   const [preferences, setPreferences] = useState<DevicePreferences>({
     cameraId: '',
@@ -723,12 +726,12 @@ export function Studio({
                         <span>
                           <strong>
                             {fresh
-                              ? item.exercise === 'plank'
+                              ? isHoldExercise(item.exercise)
                                 ? `${p.metric!.holdSeconds}s`
                                 : p.metric!.reps
                               : '—'}
                           </strong>{' '}
-                          {item.exercise === 'plank' ? 'hold' : 'reps'}
+                          {isHoldExercise(item.exercise) ? 'hold' : 'reps'}
                         </span>
                         <span>
                           <strong>
@@ -815,20 +818,37 @@ export function Studio({
                       {item.coachName} <small>Coach</small>
                     </strong>
                     <select
+                      ref={coachVideoSizeRef}
                       aria-label="Coach video size"
                       value={coachVideoLayout.size}
-                      hidden={coachVideoLayout.minimized}
-                      onChange={(event) =>
+                      hidden={coachVideoLayout.minimized || coachVideoLayout.size === 'small'}
+                      onChange={(event) => {
+                        const size = event.target.value as CoachVideoLayout['size'];
                         updateCoachVideoLayout({
                           ...coachVideoLayout,
-                          size: event.target.value as CoachVideoLayout['size'],
-                        })
-                      }
+                          size,
+                        });
+                        if (size === 'small')
+                          requestAnimationFrame(() => enlargeCoachVideoRef.current?.focus());
+                      }}
                     >
                       <option value="small">Small</option>
                       <option value="medium">Medium</option>
                       <option value="large">Large</option>
                     </select>
+                    <button
+                      ref={enlargeCoachVideoRef}
+                      className="coach-video-toggle coach-video-enlarge"
+                      aria-label="Enlarge coach video"
+                      title="Enlarge coach video"
+                      hidden={coachVideoLayout.minimized || coachVideoLayout.size !== 'small'}
+                      onClick={() => {
+                        updateCoachVideoLayout({ ...coachVideoLayout, size: 'medium' });
+                        requestAnimationFrame(() => coachVideoSizeRef.current?.focus());
+                      }}
+                    >
+                      <Maximize2 size={17} />
+                    </button>
                     <button
                       className="coach-video-toggle"
                       aria-label={
@@ -869,7 +889,13 @@ export function Studio({
                       </div>
                     )}
                     <div className="meeting-tile-name">
-                      <span>{coachParticipant?.isSpeaking ? 'Speaking' : 'Coach audio'}</span>
+                      <span>
+                        {coachVideoLayout.size === 'small'
+                          ? item.coachName
+                          : coachParticipant?.isSpeaking
+                            ? 'Speaking'
+                            : 'Coach audio'}
+                      </span>
                       {coachParticipant?.isMicrophoneEnabled ? (
                         <Mic size={15} />
                       ) : (
@@ -970,17 +996,24 @@ export function Studio({
               )}
               {!demo && !connected && item.status === 'live' && (
                 <button
-                  className="button lime"
+                  className="button lime meeting-join"
+                  aria-label={connecting ? 'Connecting live video' : 'Join live video'}
                   disabled={connecting || !services.video}
                   onClick={() => setShowConsent(true)}
                 >
                   <Video size={17} />
-                  {connecting ? 'Connecting…' : 'Join live video'}
+                  <span className="meeting-full-label">
+                    {connecting ? 'Connecting…' : 'Join live video'}
+                  </span>
+                  <span className="meeting-mobile-label" aria-hidden="true">
+                    {connecting ? '…' : 'Join'}
+                  </span>
                 </button>
               )}
               {connected && (
                 <button
                   className="button meeting-leave"
+                  aria-label="Leave video"
                   onClick={async () => {
                     joinGeneration.current++;
                     await room.current?.disconnect();

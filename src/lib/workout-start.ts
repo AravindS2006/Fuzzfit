@@ -1,6 +1,7 @@
 import type { Analysis } from './pose-engine';
 import type { ExerciseId } from './types';
 import type { WorkoutConfig } from './workout-config';
+import { getExerciseProfile } from './exercise-profiles';
 
 export type StartCountdown = {
   remainingMs: number;
@@ -50,6 +51,7 @@ export function canStartWorkout(
   config: WorkoutConfig,
   continuing = false,
 ): boolean {
+  const profile = getExerciseProfile(exercise);
   if (
     !result.tracked ||
     !Number.isFinite(result.confidence) ||
@@ -61,15 +63,17 @@ export function canStartWorkout(
     result.score > 100 ||
     result.angle === null ||
     !Number.isFinite(result.angle) ||
+    result.angle < 0 ||
     result.angle > 180 ||
-    !Number.isFinite(config.topAngle)
+    !Number.isFinite(config.topAngle) ||
+    !Number.isFinite(config.bottomAngle)
   )
     return false;
-  if (exercise === 'plank')
-    return result.phase === 'holding' && result.angle >= (continuing ? 160 : 155);
-  if (continuing) return result.angle >= config.topAngle - 8;
-  return (
-    result.angle >= config.topAngle &&
-    result.phase === (exercise === 'curl' ? 'arm extended' : 'start position')
-  );
+  if (profile.isHold) return result.phase === 'holding' && result.angle >= (continuing ? 160 : 155);
+  const atStart =
+    profile.direction === 'decrease'
+      ? result.angle >= config.topAngle - (continuing ? 8 : 0)
+      : result.angle <= config.bottomAngle + (continuing ? 8 : 0);
+  if (continuing) return atStart;
+  return atStart && result.phase === (exercise === 'curl' ? 'arm extended' : 'start position');
 }

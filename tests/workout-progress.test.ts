@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { workoutSetProgress } from '../src/lib/workout-progress';
 
 describe('workout set progress', () => {
-  it('retains fractional plank time in the baseline', () => {
-    const baseline = { reps: 0, holdMs: 900 };
-    expect(workoutSetProgress('plank', 0, 1000, baseline)).toBeCloseTo(0.1);
-    expect(workoutSetProgress('plank', 0, 1900, baseline)).toBe(1);
-  });
+  it.each(['plank', 'sideplank'] as const)(
+    'retains fractional %s time in the baseline',
+    (exercise) => {
+      const baseline = { reps: 0, holdMs: 900 };
+      expect(workoutSetProgress(exercise, 0, 1000, baseline)).toBeCloseTo(0.1);
+      expect(workoutSetProgress(exercise, 0, 1900, baseline)).toBe(1);
+    },
+  );
 
   it('requires a full second of observed hold time for each successive one-second set', () => {
     const first = { reps: 0, holdMs: 900 };

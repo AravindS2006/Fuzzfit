@@ -87,6 +87,36 @@ try {
   const workspace = await check('/api/workspace', undefined, coach);
   assert.equal(workspace.clients.length, 1);
   checks++;
+  const supportedExercises = [
+    'squat',
+    'pushup',
+    'curl',
+    'plank',
+    'lunge',
+    'shoulderpress',
+    'lateralraise',
+    'jumpingjack',
+    'glutebridge',
+    'crunch',
+    'row',
+    'sideplank',
+  ];
+  const plan = await check(
+    '/api/command',
+    {
+      action: 'savePlan',
+      name: 'Full exercise catalog',
+      description: 'Integration coverage for all tracked movements',
+      blocks: supportedExercises.map((exercise) => ({ exercise, sets: 2, reps: 10, rest: 30 })),
+    },
+    coach,
+  );
+  const savedPlan = await db.workoutPlan.findUniqueOrThrow({ where: { id: plan.id } });
+  assert.deepEqual(
+    savedPlan.blocks.map((block) => block.exercise),
+    supportedExercises,
+  );
+  checks++;
   const start = new Date(Date.now() + 3600000).toISOString();
   await check(
     '/api/command',
@@ -194,11 +224,45 @@ try {
     coach,
   );
   await check('/api/metrics', metric, trainee, 409);
+  let revision = 1;
+  for (const exercise of supportedExercises.slice(4)) {
+    await check(
+      '/api/command',
+      {
+        action: 'classControl',
+        id: item.id,
+        control: 'exercise',
+        exercise,
+      },
+      coach,
+    );
+    revision++;
+    const isHold = exercise === 'sideplank';
+    await check(
+      '/api/metrics',
+      {
+        ...metric,
+        exercise,
+        revision,
+        reps: isHold ? 0 : 1,
+        holdSeconds: isHold ? 1 : 0,
+        phase: isHold ? 'holding' : 'start position',
+      },
+      trainee,
+    );
+    const persisted = await db.metric.findFirstOrThrow({
+      where: { enrollment: { classId: item.id, userId: trainee.id } },
+    });
+    assert.equal(persisted.exercise, exercise);
+    assert.equal(persisted.revision, revision);
+    assert.equal(persisted.holdSeconds, isHold ? 1 : 0);
+    checks++;
+  }
   await check('/api/command', { action: 'classControl', id: item.id, control: 'end' }, coach);
   await check('/api/video/token', { classId: item.id }, trainee, 409);
   const personal = await check('/api/export', undefined, trainee);
   assert.equal(personal.profile.email, trainee.email);
-  assert.equal(personal.workouts[0].summary.totalReps, 2);
+  assert.equal(personal.workouts[0].summary.totalReps, 9);
   checks++;
   const health = await check('/api/health');
   assert.equal(health.status, 'ok');

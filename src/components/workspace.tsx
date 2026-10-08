@@ -1,4 +1,5 @@
 'use client';
+import { isHoldExercise } from '@/lib/exercise-profiles';
 import { useState, useEffect, useRef, useId } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -942,7 +943,7 @@ export function Workspace({ initial, view }: { initial: WorkspaceData; view: str
                       <footer>
                         <Dumbbell size={15} />
                         {p.blocks.reduce((n, b) => n + b.sets, 0)} sets<span>·</span>
-                        {p.blocks.some((b) => b.exercise === 'plank')
+                        {p.blocks.some((b) => isHoldExercise(b.exercise))
                           ? 'Reps & holds'
                           : 'Rep-based training'}
                       </footer>
@@ -1882,7 +1883,7 @@ function PlanForm({
             </label>
             {(['sets', 'reps', 'rest'] as const).map((key) => (
               <label key={key}>
-                {key === 'reps' && b.exercise === 'plank'
+                {key === 'reps' && isHoldExercise(b.exercise)
                   ? 'Hold (s)'
                   : key === 'rest'
                     ? 'Rest (s)'

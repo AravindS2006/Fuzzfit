@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Analysis } from '../src/lib/pose-engine';
 import type { ExerciseId } from '../src/lib/types';
+import { exerciseIds, getExerciseProfile, isHoldExercise } from '../src/lib/exercise-profiles';
 import { defaultWorkoutConfig } from '../src/lib/workout-config';
 import {
   advanceStartCountdown,
@@ -15,12 +16,15 @@ function readyPose(exercise: ExerciseId, change: Partial<Analysis> = {}): Analys
     holdSeconds: 0,
     score: 100,
     confidence: 0.95,
-    phase:
-      exercise === 'plank' ? 'holding' : exercise === 'curl' ? 'arm extended' : 'start position',
+    phase: isHoldExercise(exercise)
+      ? 'holding'
+      : exercise === 'curl'
+        ? 'arm extended'
+        : 'start position',
     cue: 'Ready',
-    angle: 180,
+    angle: getExerciseProfile(exercise).direction === 'increase' ? 0 : 180,
     tracked: true,
-    ruleVersion: 'geometry-v2',
+    ruleVersion: 'profile-v3',
     ...change,
   };
 }
@@ -112,24 +116,25 @@ describe('hands-free set start', () => {
     },
   );
 
-  it.each(['squat', 'pushup', 'curl', 'plank'] as const)(
-    'accepts the visible aligned starting position for %s',
-    (exercise) => {
-      const config = defaultWorkoutConfig(exercise);
-      expect(canStartWorkout(readyPose(exercise), exercise, config)).toBe(true);
-      expect(
-        canStartWorkout(
-          readyPose(exercise, {
-            confidence: 0.65,
-            score: 75,
-            angle: exercise === 'plank' ? 155 : config.topAngle,
-          }),
-          exercise,
-          config,
-        ),
-      ).toBe(true);
-    },
-  );
+  it.each(exerciseIds)('accepts the visible aligned starting position for %s', (exercise) => {
+    const config = defaultWorkoutConfig(exercise);
+    expect(canStartWorkout(readyPose(exercise), exercise, config)).toBe(true);
+    expect(
+      canStartWorkout(
+        readyPose(exercise, {
+          confidence: 0.65,
+          score: 75,
+          angle: isHoldExercise(exercise)
+            ? 155
+            : getExerciseProfile(exercise).direction === 'increase'
+              ? config.bottomAngle
+              : config.topAngle,
+        }),
+        exercise,
+        config,
+      ),
+    ).toBe(true);
+  });
 
   it.each([
     { tracked: false },
@@ -172,6 +177,28 @@ describe('hands-free set start', () => {
       false,
     );
   });
+
+  it.each(['shoulderpress', 'lateralraise', 'jumpingjack', 'glutebridge'] as const)(
+    'acquires the lower starting endpoint for %s and tolerates jitter only after acquisition',
+    (exercise) => {
+      const config = defaultWorkoutConfig(exercise);
+      const high = readyPose(exercise, { angle: config.topAngle });
+      expect(canStartWorkout(high, exercise, config)).toBe(false);
+      const jitter = readyPose(exercise, {
+        angle: config.bottomAngle + 8,
+        score: 65,
+        phase: 'moving',
+      });
+      expect(canStartWorkout(jitter, exercise, config)).toBe(false);
+      expect(canStartWorkout(jitter, exercise, config, true)).toBe(true);
+      expect(
+        canStartWorkout({ ...jitter, angle: config.bottomAngle + 9 }, exercise, config, true),
+      ).toBe(false);
+      expect(canStartWorkout(readyPose(exercise), exercise, { ...config, bottomAngle: NaN })).toBe(
+        false,
+      );
+    },
+  );
 
   it.each(['squat', 'pushup', 'curl'] as const)(
     'allows small angle and score jitter only after acquiring %s',

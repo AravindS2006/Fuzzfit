@@ -79,6 +79,15 @@ async function changePose(page: Page, change: Partial<PoseFixture>) {
   await page.evaluate((update) => Object.assign(window, update), change);
 }
 
+async function moveThroughAngles(page: Page, angles: number[]) {
+  // Real camera motion has observed intermediate positions. Teleporting 85° in
+  // one 30 FPS frame deliberately triggers the engine's landmark-jump guard.
+  for (const poseAngle of angles) {
+    await changePose(page, { poseAngle });
+    await page.waitForTimeout(75);
+  }
+}
+
 test('guided sets count only after the hands-free countdown, recover between sets, and retain cumulative reps', async () => {
   test.setTimeout(60000);
   const browser = await chromium.launch({
@@ -125,11 +134,11 @@ test('guided sets count only after the hands-free countdown, recover between set
         expect(countdownAxe.violations).toEqual([]);
       }
       await expect(page.getByRole('button', { name: 'Pause set', exact: true })).toBeVisible();
-      await expect(page.getByText('start position', { exact: true })).toBeVisible();
-      await changePose(page, { poseAngle: 95 });
-      await expect(page.getByText('lowered', { exact: true })).toBeVisible();
+      await expect(page.locator('.phase-text')).toHaveText('start position');
+      await moveThroughAngles(page, [165, 145, 125, 105, 95]);
+      await expect(page.locator('.phase-text')).toHaveText('lowered');
       await page.waitForTimeout(650);
-      await changePose(page, { poseAngle: 180 });
+      await moveThroughAngles(page, [105, 125, 145, 165, 180]);
       await expect(reps).toHaveText(String(set).padStart(2, '0'));
       await page.getByRole('button', { name: 'Workout settings', exact: true }).click();
       await expect(page.locator('.set-results tbody tr')).toHaveCount(set);
@@ -316,10 +325,10 @@ test('countdown tolerates small posture changes and pauses for a brief tracking 
     await expect(reps).toHaveText('00');
     // Starting during a tolerated stance change still creates a complete rep
     // origin; the first controlled squat is counted normally after Go.
-    await changePose(page, { poseAngle: 95 });
-    await expect(page.getByText('lowered', { exact: true })).toBeVisible();
+    await moveThroughAngles(page, [135, 120, 105, 95]);
+    await expect(page.locator('.phase-text')).toHaveText('lowered');
     await page.waitForTimeout(650);
-    await changePose(page, { poseAngle: 180 });
+    await moveThroughAngles(page, [105, 125, 145, 165, 180]);
     await expect(reps).toHaveText('01');
   } finally {
     await browser.close();
