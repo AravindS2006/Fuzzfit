@@ -2,6 +2,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { commandSchema } from '@/lib/validation';
+import { MAX_CLASS_CLIENTS } from '@/lib/class-policy';
+import { newVideoRoomName, existingVideoRoomName } from '@/lib/room-identity';
 import {
   ApiError,
   requireUser,
@@ -37,7 +39,7 @@ export async function POST(request: Request) {
         const service = videoService();
         if (!service) throw new ApiError(503, 'Live video is unavailable.');
         try {
-          const participants = await service.listParticipants(`fuzzfit-${item.id}`);
+          const participants = await service.listParticipants(existingVideoRoomName(item));
           await Promise.all(
             participants
               .filter(
@@ -49,7 +51,12 @@ export async function POST(request: Request) {
                 p.tracks
                   .filter((t) => t.source === TrackSource.MICROPHONE && !t.muted)
                   .map((t) =>
-                    service.mutePublishedTrack(`fuzzfit-${item.id}`, p.identity, t.sid, true),
+                    service.mutePublishedTrack(
+                      existingVideoRoomName(item),
+                      p.identity,
+                      t.sid,
+                      true,
+                    ),
                   ),
               ),
           );
@@ -207,8 +214,19 @@ export async function POST(request: Request) {
       }
       case 'createClass': {
         const owned = requireCoach();
-        const ids = [...new Set(data.participantIds)];
-        if (ids.length !== data.participantIds.length || ids.length > data.capacity)
+        const ids = data.includeAllClients
+          ? (
+              await db.membership.findMany({
+                where: { studioId: owned.id },
+                select: { userId: true },
+              })
+            ).map((member) => member.userId)
+          : [...new Set(data.participantIds)];
+        if (
+          (!data.includeAllClients && ids.length !== data.participantIds.length) ||
+          ids.length > MAX_CLASS_CLIENTS ||
+          (!data.includeAllClients && ids.length > data.capacity)
+        )
           throw new ApiError(400, 'Check the class capacity and participant list.');
         if (new Date(data.startsAt).getTime() < Date.now() - 60000)
           throw new ApiError(400, 'Choose a future start time.');
@@ -226,7 +244,7 @@ export async function POST(request: Request) {
             title: data.title,
             startsAt: new Date(data.startsAt),
             duration: data.duration,
-            capacity: data.capacity,
+            capacity: Math.max(data.capacity, ids.length),
             planId: plan?.id,
             enrollments: { create: ids.map((userId) => ({ userId })) },
           },
@@ -240,7 +258,7 @@ export async function POST(request: Request) {
         if (item.studio.ownerId !== user.id)
           throw new ApiError(403, 'Only this class coach can control it.');
         if (data.control === 'end' && item.status === 'completed') {
-          await deleteRoom(item.id, [
+          await deleteRoom(existingVideoRoomName(item), [
             item.studio.ownerId,
             ...item.enrollments.map((e) => e.userId),
           ]);
@@ -255,7 +273,12 @@ export async function POST(request: Request) {
         if (data.control === 'start') await createRoom(item.id, item.capacity + 1);
         const change =
           data.control === 'start'
-            ? { status: 'live', startedAt: new Date(), paused: false }
+            ? {
+                status: 'live',
+                startedAt: new Date(),
+                paused: false,
+                videoRoomName: newVideoRoomName(item.id),
+              }
             : data.control === 'end'
               ? { status: 'completed', endedAt: new Date(), paused: true }
               : data.control === 'cancel'
@@ -273,7 +296,7 @@ export async function POST(request: Request) {
           data: { actorId: user.id, action: data.control, targetId: item.id },
         });
         if (data.control === 'end')
-          await deleteRoom(item.id, [
+          await deleteRoom(existingVideoRoomName(item), [
             item.studio.ownerId,
             ...item.enrollments.map((e) => e.userId),
           ]);
@@ -356,7 +379,7 @@ async function createRoom(id: string, maxParticipants: number) {
   if (!service) return;
   try {
     await service.createRoom({
-      name: `fuzzfit-${id}`,
+      name: newVideoRoomName(id),
       maxParticipants,
       // Preserve an idle room through the longest supported class and its reconnect window.
       emptyTimeout: 10800,
@@ -369,20 +392,20 @@ async function createRoom(id: string, maxParticipants: number) {
     );
   }
 }
-async function deleteRoom(id: string, identities: string[]) {
+async function deleteRoom(roomName: string, identities: string[]) {
   const service = videoService();
   if (!service) return;
   const cutoff = BigInt(Math.floor(Date.now() / 1000) + 1);
   const revocations = await Promise.allSettled(
     identities.map((identity) =>
-      service.removeParticipant(`fuzzfit-${id}`, identity, { revokeTokenTs: cutoff }),
+      service.removeParticipant(roomName, identity, { revokeTokenTs: cutoff }),
     ),
   );
   const revoked = revocations.every(
     (result) => result.status === 'fulfilled' || isRoomMissing(result.reason),
   );
   try {
-    await service.deleteRoom(`fuzzfit-${id}`);
+    await service.deleteRoom(roomName);
   } catch (error) {
     if (isRoomMissing(error) && revoked) return;
     throw new ApiError(

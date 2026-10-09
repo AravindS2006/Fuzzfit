@@ -8,6 +8,44 @@ import {
   type PoseFixture,
 } from './support/pose-fixture';
 
+test('guided calibration saves a personal range on mobile without starting or counting a set', async () => {
+  test.setTimeout(30000);
+  const browser = await chromium.launch({
+    channel: 'msedge',
+    args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
+  });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await addPoseFixture(page);
+  try {
+    await page.goto('/demo?view=practice');
+    await changePose(page, { poseAngle: 170 });
+    await page.getByRole('button', { name: 'Enable camera' }).click();
+    await expect(page.getByText('Pose detected', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Workout settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Calibrate movement with your coach' }).click();
+    await expect(page.getByRole('button', { name: 'Start set', exact: true })).toBeDisabled();
+    await expect(page.locator('.analyzer-cue')).toContainText('comfortable end position', {
+      timeout: 10000,
+    });
+    await moveThroughAngles(page, [160, 150, 140, 130, 120, 110, 100, 90]);
+    await expect(page.locator('.analyzer-cue')).toContainText('Your measured range is saved', {
+      timeout: 10000,
+    });
+    await expect(page.getByTestId('cumulative-reps')).toHaveText('00');
+    await page.getByRole('button', { name: 'Workout settings', exact: true }).click();
+    await page.getByText('Adjust tracking with your coach', { exact: true }).click();
+    await expect(page.getByLabel('Higher endpoint (°)')).toHaveValue('166');
+    await expect(page.getByLabel('Lower endpoint (°)')).toHaveValue('94');
+    await page.getByRole('button', { name: 'Close dialog' }).click();
+    await page.reload();
+    await page.getByRole('button', { name: 'Workout settings', exact: true }).click();
+    await page.getByText('Adjust tracking with your coach', { exact: true }).click();
+    await expect(page.getByLabel('Higher endpoint (°)')).toHaveValue('166');
+  } finally {
+    await browser.close();
+  }
+});
+
 test('guided sets count only after the hands-free countdown, recover between sets, and retain cumulative reps', async () => {
   test.setTimeout(60000);
   const browser = await chromium.launch({
@@ -239,9 +277,12 @@ test('countdown tolerates small posture changes and pauses for a brief tracking 
     // Lost frames consume no countdown time. Returning promptly resumes the
     // remaining two seconds instead of resetting to five or starting early.
     await expect(remaining).toHaveText('2');
+    const resumedAt = Date.now();
     await changePose(page, { poseAngle: 150 });
-    await expect(remaining).toHaveText('1');
-    await expect(active).toBeVisible();
+    // Assert the outcome and elapsed time: browser scheduling can skip a
+    // transient displayed digit even when the remaining clock is correct.
+    await expect(active).toBeVisible({ timeout: 4000 });
+    expect(Date.now() - resumedAt).toBeGreaterThan(800);
     await expect(reps).toHaveText('00');
     // Starting during a tolerated stance change still creates a complete rep
     // origin; the first controlled squat is counted normally after Go.

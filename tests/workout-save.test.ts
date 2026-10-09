@@ -3,7 +3,7 @@ import type { WorkoutSetRecord } from '../src/lib/types';
 const request = vi.hoisted(() => vi.fn());
 vi.mock('../src/lib/client', () => ({ fetchJson: request }));
 import { saveWorkoutSet, retryWorkoutSets, pendingWorkoutSets } from '../src/lib/workout-save';
-const key = 'fuzzfit:pending-sets:v1';
+const key = 'geez-squad:pending-sets:v1';
 const record: WorkoutSetRecord = {
   clientId: '018f165d-c727-4951-8f0e-e6f9d9fddba9',
   classId: null,
@@ -37,6 +37,13 @@ beforeEach(() => {
   });
 });
 afterEach(() => vi.unstubAllGlobals());
+it('migrates the old pending queue without discarding unsent sets', async () => {
+  values.set('fuzzfit:pending-sets:v1', JSON.stringify([{ userId: 'owner', record }]));
+  expect(pendingWorkoutSets('owner')).toBe(1);
+  request.mockResolvedValue({ saved: true });
+  expect(await retryWorkoutSets('owner')).toBe(1);
+  expect(pendingWorkoutSets('owner')).toBe(0);
+});
 it('queues a failed save and sends its intended owner on a kept-alive retry', async () => {
   request.mockRejectedValueOnce(Error('Offline')).mockResolvedValue({ saved: true });
   await expect(saveWorkoutSet('owner', record)).rejects.toThrow('Offline');

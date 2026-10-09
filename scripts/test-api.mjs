@@ -233,6 +233,25 @@ try {
     },
     coach,
   );
+  const allClass = await check(
+    '/api/command',
+    {
+      action: 'createClass',
+      title: 'Entire studio',
+      startsAt: start,
+      duration: 45,
+      capacity: 1,
+      participantIds: [],
+      includeAllClients: true,
+    },
+    coach,
+  );
+  const allView = await check(`/api/classes/${allClass.id}`, undefined, coach);
+  assert.deepEqual(
+    allView.participants.map((person) => person.id),
+    [trainee.id],
+  );
+  checks++;
   await check(`/api/classes/${item.id}`, undefined, other, 404);
   await check(
     '/api/command',

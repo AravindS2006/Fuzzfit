@@ -3,15 +3,15 @@ import { validateProductionConfig } from '../scripts/production-config.mjs';
 
 const valid = {
   DATABASE_PROVIDER: 'postgresql',
-  DATABASE_URL: 'postgresql://user:password@db.neon.tech/fuzzfit?sslmode=require',
-  DIRECT_URL: 'postgresql://user:password@direct.neon.tech/fuzzfit?sslmode=require',
+  DATABASE_URL: 'postgresql://user:password@db.neon.tech/geez-squad?sslmode=require',
+  DIRECT_URL: 'postgresql://user:password@direct.neon.tech/geez-squad?sslmode=require',
   BETTER_AUTH_SECRET: 'a'.repeat(43),
-  BETTER_AUTH_URL: 'https://fuzzfit.vercel.app',
-  LIVEKIT_URL: 'wss://fuzzfit.livekit.cloud',
+  BETTER_AUTH_URL: 'https://geez-squad.vercel.app',
+  LIVEKIT_URL: 'wss://geez-squad.livekit.cloud',
   LIVEKIT_API_KEY: 'key-for-test-only',
   LIVEKIT_API_SECRET: 'secret-for-test-only',
   RESEND_API_KEY: 're_test-only',
-  EMAIL_FROM: 'Fuzzfit <hello@fuzzfit.in>',
+  EMAIL_FROM: 'Geez Squad <hello@geez-squad.in>',
   CRON_SECRET: 'b'.repeat(43),
 };
 describe('production deployment guard', () => {
@@ -67,19 +67,19 @@ describe('production deployment guard', () => {
   it.each([
     'file:./dev.db',
     'postgresql-not-a-url',
-    'postgresql://user:password@localhost/fuzzfit',
-    'postgresql://user:password@db.neon.tech/fuzzfit?sslmode=disable',
+    'postgresql://user:password@localhost/geez-squad',
+    'postgresql://user:password@db.neon.tech/geez-squad?sslmode=disable',
   ])('rejects unsafe database configuration: %s', (url) => {
     expect(validateProductionConfig({ ...valid, DATABASE_URL: url }).join(' ')).toContain(
       'DATABASE_URL',
     );
   });
   it.each([
-    'http://fuzzfit.vercel.app',
+    'http://geez-squad.vercel.app',
     'https://localhost:3000',
-    'https://fuzzfit.vercel.app/login',
-    'https://fuzzfit.vercel.app?redirect=elsewhere',
-    'https://user:password@fuzzfit.vercel.app',
+    'https://geez-squad.vercel.app/login',
+    'https://geez-squad.vercel.app?redirect=elsewhere',
+    'https://user:password@geez-squad.vercel.app',
   ])('rejects an invalid auth origin: %s', (url) => {
     expect(validateProductionConfig({ ...valid, BETTER_AUTH_URL: url }).join(' ')).toContain(
       'BETTER_AUTH_URL',
@@ -97,7 +97,7 @@ describe('production deployment guard', () => {
     expect(
       validateProductionConfig({
         ...valid,
-        EMAIL_FROM: 'Fuzzfit <hello@your-verified-domain.com>',
+        EMAIL_FROM: 'Geez Squad <hello@your-verified-domain.com>',
       }).join(' '),
     ).toContain('placeholder');
     expect(
@@ -115,7 +115,7 @@ describe('production deployment guard', () => {
     ).toContain('LIVEKIT_API_SECRET');
   });
   it('never includes secret values in configuration errors', () => {
-    const database = 'postgresql://someone:private-password@localhost/fuzzfit';
+    const database = 'postgresql://someone:private-password@localhost/geez-squad';
     const errors = validateProductionConfig({
       ...valid,
       DATABASE_URL: database,

@@ -118,6 +118,7 @@ model WorkoutPlan {
   assignments PlanAssignment[]
 }
 model ClassSession {
+  videoRoomName String?
   id String @id @default(cuid())
   studioId String
   planId String?

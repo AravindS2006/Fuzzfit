@@ -1,4 +1,4 @@
-# Fuzzfit — research and implementation plan
+# Geez Squad — research and implementation plan
 
 Prepared 6 October 2026. Hosting decision: Vercel + LiveKit Cloud. This is a technical plan, with proposed targets clearly distinguished from measured results. The launch checklist is a release gate, not a claim of certification.
 

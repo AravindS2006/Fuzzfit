@@ -10,7 +10,7 @@ export default function PrivacyPage() {
       <span className="eyebrow">YOUR MOVEMENT. YOUR CHOICE.</span>
       <h1>A clear view of camera privacy.</h1>
       <p>
-        This guide explains the current Fuzzfit implementation. The studio operator must provide
+        This guide explains the current Geez Squad implementation. The studio operator must provide
         their legal privacy policy, contact information, and service terms before accepting real
         customers.
       </p>
@@ -81,7 +81,7 @@ export default function PrivacyPage() {
         configure the selected vendors and publish the applicable privacy terms.
       </p>
       <Link href="/" className="text-link">
-        <ArrowLeft size={16} /> Back to Fuzzfit
+        <ArrowLeft size={16} /> Back to Geez Squad
       </Link>
     </main>
   );

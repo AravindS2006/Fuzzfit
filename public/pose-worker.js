@@ -49,6 +49,7 @@ self.onmessage = async ({ data }) => {
     }
   }
   if (data.type === 'frame') {
+    let transferred = false;
     try {
       if (!model) return;
       const started = performance.now();
@@ -68,7 +69,7 @@ self.onmessage = async ({ data }) => {
         self.postMessage({ type: 'backend', variant, delegate });
         result = model.detectForVideo(data.bitmap, data.timestamp);
       }
-      self.postMessage({
+      const message = {
         type: 'result',
         poses: result.landmarks,
         worldPoses: result.worldLandmarks,
@@ -76,14 +77,18 @@ self.onmessage = async ({ data }) => {
         timestamp: data.timestamp,
         width: data.width,
         height: data.height,
-      });
+        bitmap: data.presentFrame ? data.bitmap : undefined,
+      };
+      self.postMessage(message, data.presentFrame ? [data.bitmap] : []);
+      transferred = Boolean(data.presentFrame);
     } catch {
       self.postMessage({
         type: 'error',
         message: 'Camera analysis failed. Stop and retry tracking.',
       });
     } finally {
-      data.bitmap?.close();
+      // Ownership moves back to the renderer only after a successful transfer.
+      if (!transferred) data.bitmap?.close();
     }
   }
 };

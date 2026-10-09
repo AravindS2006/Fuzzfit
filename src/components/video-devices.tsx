@@ -51,8 +51,9 @@ export function VideoDevices({
         video: preferences.cameraId
           ? {
               deviceId: { exact: preferences.cameraId },
-              width: { ideal: 640 },
-              height: { ideal: 480 },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              frameRate: { ideal: 30 },
             }
           : { facingMode: 'user' },
         audio: false,

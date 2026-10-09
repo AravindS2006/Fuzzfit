@@ -5,11 +5,9 @@ export function Brand() {
   return (
     <span className="brand">
       <span className="brand-icon">
-        <i />
-        <i />
-        <i />
+        <Dumbbell size={26} strokeWidth={2.5} aria-hidden="true" />
       </span>
-      fuzzfit<span className="brand-period">.</span>
+      Geez Squad
     </span>
   );
 }

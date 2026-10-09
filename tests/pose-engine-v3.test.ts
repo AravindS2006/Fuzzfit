@@ -102,6 +102,26 @@ function phoneFrontCurl(
 }
 
 describe('profile v3 movement pipeline', () => {
+  it('retains a completed curl after one noisy form frame but rejects sustained poor alignment', () => {
+    const state = initialPoseState();
+    for (let index = 0; index <= 60; index++) {
+      const angle = 125 + 45 * Math.cos((index / 48) * Math.PI * 2);
+      const pose = curl(angle);
+      // Simulate one hip detection error, keeping the moving arm geometry intact.
+      if (index === 25) for (const side of [0, 1]) pose[23 + side].x += 0.4;
+      frame(state, angle, 100 + (index * 1000) / 24, pose);
+    }
+    expect(state.reps).toBe(1);
+    expect(state.cycleInvalidMs).toBeLessThan(150);
+  });
+  it('rejects low-confidence depth points while reliable image geometry remains available', () => {
+    const { image, world } = phoneFrontCurl(170, 'right');
+    world[13].visibility = world[14].visibility = 0.2;
+    const result = analyzePose([image], 'curl', initialPoseState(), 100, 390, 844, false, {}, [
+      world,
+    ]);
+    expect(result.geometrySource).toBe('2d');
+  });
   it.each([15, 24, 30])('counts ten continuous curls at %i fps without an endpoint hold', (fps) => {
     const state = continuousCurls(fps, 10);
     expect(state.reps).toBe(10);

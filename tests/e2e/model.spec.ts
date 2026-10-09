@@ -1,6 +1,113 @@
 import { test, expect, chromium } from '@playwright/test';
-for (const cpuFallback of [false, true]) {
-  test(`real Full pose model loads ${cpuFallback ? 'with CPU fallback' : 'with the available backend'}`, async () => {
+
+for (const failure of ['GPU initialization stall', 'slow Heavy inference'] as const) {
+  test(`${failure} recovers without replacing the camera`, async () => {
+    test.setTimeout(60000);
+    const browser = await chromium.launch({
+      channel: 'msedge',
+      args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
+    });
+    const page = await browser.newPage();
+    await page.addInitScript(() => {
+      const NativeWorker = window.Worker;
+      const diagnostics = { starts: 0, variant: '', delegate: '' };
+      (window as unknown as { recovery: typeof diagnostics }).recovery = diagnostics;
+      window.Worker = class extends NativeWorker {
+        constructor(url: string | URL, options?: WorkerOptions) {
+          super(url, options);
+          diagnostics.starts++;
+          this.addEventListener('message', ({ data }) => {
+            if (data.type === 'ready' || data.type === 'backend') {
+              diagnostics.variant = data.variant;
+              diagnostics.delegate = data.delegate;
+            }
+          });
+        }
+      };
+    });
+    await page.route('**/pose-worker.js', async (route) => {
+      const response = await route.fetch();
+      const source = await response.text();
+      await route.fulfill({
+        response,
+        body:
+          failure === 'GPU initialization stall'
+            ? source.replace(
+                'const { FilesetResolver, PoseLandmarker } = self.exports;',
+                `const { FilesetResolver, PoseLandmarker } = self.exports;
+                const nativeCreate = PoseLandmarker.createFromOptions.bind(PoseLandmarker);
+                PoseLandmarker.createFromOptions = (files, options) =>
+                  options.baseOptions.delegate === 'GPU'
+                    ? new Promise(() => {})
+                    : nativeCreate(files, options);`,
+              )
+            : source.replace(
+                'inferenceMs: performance.now() - started,',
+                "inferenceMs: variant === 'heavy' ? 250 : performance.now() - started,",
+              ),
+      });
+    });
+    try {
+      await page.goto('/demo?view=practice');
+      await page.getByRole('button', { name: 'Enable camera' }).click();
+      await expect
+        .poll(() =>
+          page.locator('video').evaluate((video) => Boolean((video as HTMLVideoElement).srcObject)),
+        )
+        .toBe(true);
+      await page.evaluate(() => {
+        (window as unknown as { originalCamera: MediaStream }).originalCamera =
+          document.querySelector('video')!.srcObject as MediaStream;
+      });
+      await expect
+        .poll(
+          () =>
+            page.evaluate(
+              () =>
+                (
+                  window as unknown as {
+                    recovery: { starts: number; variant: string; delegate: string };
+                  }
+                ).recovery,
+            ),
+          { timeout: 45000 },
+        )
+        .toMatchObject(
+          failure === 'GPU initialization stall'
+            ? { starts: 2, variant: 'heavy', delegate: 'CPU' }
+            : { variant: 'full', delegate: expect.stringMatching(/^(GPU|CPU)$/) },
+        );
+      const starts = await page.evaluate(
+        () => (window as unknown as { recovery: { starts: number } }).recovery.starts,
+      );
+      expect(starts).toBeGreaterThanOrEqual(2);
+      expect(starts).toBeLessThanOrEqual(3);
+      await expect(
+        page.getByText('Step into view and keep the required joints visible.'),
+      ).toBeVisible();
+      expect(
+        await page.evaluate(() => {
+          const original = (window as unknown as { originalCamera: MediaStream }).originalCamera;
+          return (
+            original === document.querySelector('video')!.srcObject &&
+            original.getVideoTracks().every((track) => track.readyState === 'live')
+          );
+        }),
+      ).toBe(true);
+      await expect(page.getByTestId('cumulative-reps')).toHaveText('00');
+    } finally {
+      await browser.close();
+    }
+  });
+}
+
+for (const [variant, cpuFallback] of [
+  ['full', false],
+  ['full', true],
+  ['heavy', false],
+  ['heavy', true],
+] as const) {
+  test(`real ${variant} pose model loads ${cpuFallback ? 'with CPU fallback' : 'with the available backend'}`, async () => {
     test.setTimeout(60000);
     const browser = await chromium.launch({
       channel: 'msedge',
@@ -13,8 +120,11 @@ for (const cpuFallback of [false, true]) {
         constructor(url: string | URL, options?: WorkerOptions) {
           super(url, options);
           this.addEventListener('message', ({ data }) => {
-            if (data.type === 'ready' || data.type === 'backend')
+            if (data.type === 'ready' || data.type === 'backend') {
               (window as unknown as { poseBackend: unknown }).poseBackend = data;
+              const state = window as unknown as { firstPoseVariant?: string };
+              state.firstPoseVariant ??= data.variant;
+            }
           });
         }
       };
@@ -37,6 +147,12 @@ for (const cpuFallback of [false, true]) {
     page.on('pageerror', (e) => errors.push(e.message));
     try {
       await page.goto('http://localhost:3000/demo?view=practice');
+      if (variant === 'full') {
+        await page.getByRole('button', { name: 'Workout settings', exact: true }).click();
+        await page.getByText('Adjust tracking with your coach', { exact: true }).click();
+        await page.getByLabel('Tracking quality').selectOption('full');
+        await page.getByRole('button', { name: 'Close dialog' }).click();
+      }
       await page.getByRole('button', { name: 'Enable camera' }).click();
       await expect(page.getByText('Position camera', { exact: true })).toBeVisible({
         timeout: 45000,
@@ -48,7 +164,12 @@ for (const cpuFallback of [false, true]) {
         () =>
           (window as unknown as { poseBackend: { variant: string; delegate: string } }).poseBackend,
       );
-      expect(backend.variant).toBe('full');
+      expect(
+        await page.evaluate(
+          () => (window as unknown as { firstPoseVariant: string }).firstPoseVariant,
+        ),
+      ).toBe(variant);
+      expect(['heavy', 'full']).toContain(backend.variant);
       expect(
         cpuFallback ? backend.delegate === 'CPU' : ['GPU', 'CPU'].includes(backend.delegate),
       ).toBe(true);
@@ -137,7 +258,7 @@ test('a stalled GPU inference recovers through a real CPU worker without replaci
     await expect(page.getByTestId('cumulative-reps')).toHaveText('00');
     await page.getByRole('button', { name: 'Workout settings', exact: true }).click();
     await page.getByText('Adjust tracking with your coach', { exact: true }).click();
-    await expect(page.getByText(/Tracking: full · CPU/)).toBeVisible();
+    await expect(page.getByText(/Tracking: (heavy|full) · CPU/)).toBeVisible();
     await page.getByRole('button', { name: 'Close dialog' }).click();
     await page.getByRole('button', { name: 'Stop local camera analysis' }).click();
     expect(await page.evaluate(() => document.querySelector('video')?.srcObject)).toBeNull();

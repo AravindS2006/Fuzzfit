@@ -134,7 +134,7 @@ test('coach assignments, check-ins, private notes and a retried camera set persi
     await expect(trainee.getByRole('button', { name: 'Retry saving', exact: true })).toBeVisible();
     expect(
       await trainee.evaluate(
-        () => JSON.parse(localStorage.getItem('fuzzfit:pending-sets:v1') ?? '[]').length,
+        () => JSON.parse(localStorage.getItem('geez-squad:pending-sets:v1') ?? '[]').length,
       ),
     ).toBe(1);
     await trainee.getByRole('button', { name: 'Retry saving', exact: true }).click();
@@ -158,7 +158,7 @@ test('coach assignments, check-ins, private notes and a retried camera set persi
     ).toContainText('5 kg·reps');
     const downloaded = trainee.waitForEvent('download');
     await trainee.getByRole('button', { name: 'Export CSV' }).click();
-    expect((await downloaded).suggestedFilename()).toBe('fuzzfit-workouts.csv');
+    expect((await downloaded).suggestedFilename()).toBe('geez-squad-workouts.csv');
     expect((await trainee.request.get('/api/workspace')).ok()).toBe(true);
     expect(
       JSON.stringify(await (await trainee.request.get('/api/workspace')).json()),
@@ -175,7 +175,7 @@ test('coach assignments, check-ins, private notes and a retried camera set persi
     );
     expect(
       await trainee.evaluate(
-        () => JSON.parse(localStorage.getItem('fuzzfit:pending-sets:v1') ?? '[]').length,
+        () => JSON.parse(localStorage.getItem('geez-squad:pending-sets:v1') ?? '[]').length,
       ),
     ).toBe(0);
     // Leaving an unfinished, consented set must retain its measured work once.

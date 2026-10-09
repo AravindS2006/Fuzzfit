@@ -1,4 +1,5 @@
 'use client';
+import { readBrowserPreference } from '@/lib/browser-preferences';
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
@@ -52,7 +53,7 @@ type CoachVideoLayout = {
   minimized: boolean;
   position: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
 };
-const coachVideoPreferenceKey = 'fuzzfit:coach-video-layout:v1';
+const coachVideoPreferenceKey = 'geez-squad:coach-video-layout:v1';
 export function Studio({
   initialClass,
   user,
@@ -125,7 +126,7 @@ export function Studio({
   useEffect(() => {
     mounted.current = true;
     try {
-      const saved = JSON.parse(localStorage.getItem(coachVideoPreferenceKey) || 'null');
+      const saved = JSON.parse(readBrowserPreference(coachVideoPreferenceKey) || 'null');
       if (
         saved &&
         ['small', 'medium', 'large'].includes(saved.size) &&
@@ -311,7 +312,7 @@ export function Studio({
         adaptiveStream: true,
         dynacast: true,
         videoCaptureDefaults: {
-          resolution: { width: 640, height: 480, frameRate: 24 },
+          resolution: { width: 1280, height: 720, frameRate: 30 },
           deviceId: preferences.cameraId || undefined,
           facingMode: facing,
         },
@@ -580,7 +581,7 @@ export function Studio({
     .reverse()
     .find((m) => m.kind === 'cue' && (!m.recipientId || m.recipientId === user.id));
   const count = item.participants.length + 1;
-  const columns = count <= 2 ? 2 : count <= 4 ? 2 : 3;
+  const columns = count <= 4 ? 2 : count <= 9 ? 3 : count <= 25 ? 5 : 6;
   return (
     <div
       ref={meetingRef}
@@ -601,7 +602,7 @@ export function Studio({
           <ArrowLeft size={21} />
         </button>
         <div className="meeting-title">
-          <span>{demo ? 'ILLUSTRATIVE STUDIO PREVIEW' : 'FUZZFIT LIVE'}</span>
+          <span>{demo ? 'ILLUSTRATIVE STUDIO PREVIEW' : 'GEEZ SQUAD LIVE'}</span>
           <h1>{item.title}</h1>
         </div>
         <div className="meeting-presence">
@@ -692,12 +693,13 @@ export function Studio({
             <Presentation room={connected ? room.current : null} onActive={setPresenting} />
             {coach ? (
               <div
-                className="participant-grid meeting-gallery"
+                className={`participant-grid meeting-gallery ${count > 9 ? 'scrolling-gallery' : ''}`}
                 style={
                   {
                     '--gallery-columns': columns,
                     '--gallery-rows': Math.ceil(count / columns),
                     '--mobile-rows': Math.ceil(count / 2),
+                    '--compact-rows': Math.ceil(count / 3),
                   } as React.CSSProperties
                 }
                 role="group"
@@ -1402,8 +1404,8 @@ export function Studio({
             <div className="privacy-note">
               <ShieldCheck size={20} />
               <p>
-                Camera analysis runs locally. Fuzzfit does not record the class. You can stop your
-                devices or leave at any time.
+                Camera analysis runs locally. Geez Squad does not record the class. You can stop
+                your devices or leave at any time.
               </p>
             </div>
             <label className="checkbox-label">

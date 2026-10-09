@@ -1,5 +1,6 @@
 'use client';
 import { isHoldExercise } from '@/lib/exercise-profiles';
+import { MAX_CLASS_CLIENTS } from '@/lib/class-policy';
 import { useState, useEffect, useRef, useId } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -318,7 +319,10 @@ export function Workspace({ initial, view }: { initial: WorkspaceData; view: str
             startedAt: null,
             endedAt: null,
             participants: current.clients
-              .filter((c) => (payload.participantIds as string[]).includes(c.id))
+              .filter(
+                (c) =>
+                  payload.includeAllClients || (payload.participantIds as string[]).includes(c.id),
+              )
               .map((c) => ({
                 id: c.id,
                 name: c.name,
@@ -1245,7 +1249,7 @@ export function Workspace({ initial, view }: { initial: WorkspaceData; view: str
         <footer className="workspace-footer">
           <span>Small steps. Stronger tomorrows.</span>
           <span>
-            Fuzzfit <span className="brand-period">✳</span>
+            Geez Squad <span className="brand-period">✳</span>
           </span>
         </footer>
       </div>
@@ -1766,6 +1770,9 @@ function ScheduleForm({
   onSubmit: (c: Command) => void;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
+  const [allClients, setAllClients] = useState(false);
+  const [searchClients, setSearchClients] = useState('');
+  const selectedCount = allClients ? data.clients.length : selected.length;
   const next = new Date(Date.now() + 3600000);
   const local = new Date(next.getTime() - next.getTimezoneOffset() * 60000)
     .toISOString()
@@ -1781,7 +1788,8 @@ function ScheduleForm({
           title: f.get('title'),
           startsAt: new Date(String(f.get('startsAt'))).toISOString(),
           duration: Number(f.get('duration')),
-          capacity: 8,
+          capacity: Math.max(1, selectedCount),
+          includeAllClients: allClients,
           planId: f.get('planId') || undefined,
           participantIds: selected,
         });
@@ -1825,39 +1833,84 @@ function ScheduleForm({
         </label>
       </div>
       <p className="microcopy">
-        Times use {Intl.DateTimeFormat().resolvedOptions().timeZone}. Sessions support up to 8
-        trainees.
+        Times use {Intl.DateTimeFormat().resolvedOptions().timeZone}. Sessions support up to{' '}
+        {MAX_CLASS_CLIENTS} trainees.
       </p>
       <label>
-        Invite your clients <span className="subtle">{selected.length}/8 selected</span>
+        Invite your clients <span className="subtle">{selectedCount} selected</span>
       </label>
-      <div className="participant-picker">
-        {data.clients.map((c, i) => (
-          <label key={c.id}>
+      {data.clients.length > 0 && (
+        <div className="session-client-actions">
+          <label>
             <input
               type="checkbox"
-              checked={selected.includes(c.id)}
-              onChange={(e) =>
-                setSelected((s) =>
-                  e.target.checked
-                    ? s.length < 8
-                      ? [...s, c.id]
-                      : s
-                    : s.filter((id) => id !== c.id),
-                )
-              }
-            />
-            <Avatar name={c.name} small index={i} />
-            {c.name}
+              checked={allClients}
+              disabled={data.clients.length > MAX_CLASS_CLIENTS}
+              onChange={(event) => {
+                setAllClients(event.target.checked);
+                setSelected([]);
+              }}
+            />{' '}
+            Include all clients
           </label>
-        ))}
+          <button
+            type="button"
+            className="text-action"
+            onClick={() => {
+              setSelected([]);
+              setAllClients(false);
+            }}
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
+      {data.clients.length > MAX_CLASS_CLIENTS && (
+        <p className="inline-notice">Select up to {MAX_CLASS_CLIENTS} clients for this session.</p>
+      )}
+      {data.clients.length > 8 && (
+        <label>
+          Find a client
+          <input
+            type="search"
+            value={searchClients}
+            onChange={(event) => setSearchClients(event.target.value)}
+            placeholder="Search names"
+          />
+        </label>
+      )}
+      <div className="participant-picker">
+        {data.clients
+          .filter((client) => client.name.toLowerCase().includes(searchClients.toLowerCase()))
+          .map((c, i) => (
+            <label key={c.id}>
+              <input
+                type="checkbox"
+                checked={allClients || selected.includes(c.id)}
+                disabled={
+                  allClients || (!selected.includes(c.id) && selected.length >= MAX_CLASS_CLIENTS)
+                }
+                onChange={(e) =>
+                  setSelected((s) =>
+                    e.target.checked
+                      ? s.length < MAX_CLASS_CLIENTS
+                        ? [...s, c.id]
+                        : s
+                      : s.filter((id) => id !== c.id),
+                  )
+                }
+              />
+              <Avatar name={c.name} small index={i} />
+              {c.name}
+            </label>
+          ))}
       </div>
       {!data.clients.length && (
         <p className="inline-notice">
           Invite clients to your studio to add them. You can schedule a solo rehearsal now.
         </p>
       )}
-      <button className="button dark" disabled={busy}>
+      <button className="button dark" disabled={busy || selectedCount > MAX_CLASS_CLIENTS}>
         <CalendarDays size={17} />
         {busy ? 'Saving…' : 'Schedule session'}
       </button>

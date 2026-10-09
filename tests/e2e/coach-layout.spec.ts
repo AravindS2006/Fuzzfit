@@ -179,6 +179,15 @@ test('a trainee can resize, minimize, and restore the coach without replacing wo
 
     await page.setViewportSize({ width: 390, height: 844 });
     await changeSize('small');
+    expect(await coachTile.evaluate((element) => getComputedStyle(element).boxShadow)).toBe('none');
+    for (const selector of ['.coach-video-toolbar', '.meeting-tile-name', '.analyzer-topbar']) {
+      expect(
+        await page
+          .locator(selector)
+          .first()
+          .evaluate((element) => getComputedStyle(element).backgroundImage),
+      ).toBe('none');
+    }
     const cameraBeforeSmallMinimize = await page.locator('.camera-view').boundingBox();
     await page.getByRole('button', { name: 'Minimize coach video' }).click();
     await page.reload();

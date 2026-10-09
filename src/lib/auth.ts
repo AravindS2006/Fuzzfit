@@ -6,7 +6,7 @@ import { sendMail } from './mail';
 import { getEmailPolicy } from './email-policy.mjs';
 export const emailPolicy = getEmailPolicy(process.env);
 export const auth = betterAuth({
-  appName: 'Fuzzfit',
+  appName: 'Geez Squad',
   baseURL: process.env.BETTER_AUTH_URL,
   secret: process.env.BETTER_AUTH_SECRET,
   database: prismaAdapter(db, {
@@ -23,7 +23,7 @@ export const auth = betterAuth({
       ? async ({ user, url }) => {
           await sendMail(
             user.email,
-            'Reset your Fuzzfit password',
+            'Reset your Geez Squad password',
             `Reset your password: ${url}\nIf you did not request this, ignore this email.`,
           );
         }
@@ -36,8 +36,8 @@ export const auth = betterAuth({
         sendVerificationEmail: async ({ user, url }) => {
           await sendMail(
             user.email,
-            'Verify your Fuzzfit email',
-            `Welcome to Fuzzfit. Verify your email: ${url}`,
+            'Verify your Geez Squad email',
+            `Welcome to Geez Squad. Verify your email: ${url}`,
           );
         },
       }

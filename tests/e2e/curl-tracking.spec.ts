@@ -59,7 +59,8 @@ test('a front-facing phone counts ten continuous right-arm depth curls with auto
         if (data.type === 'init') {
           fixture.curlWorkerVariants.push(data.variant ?? 'full');
           setTimeout(
-            () => this.onmessage?.({ data: { type: 'ready', variant: 'full', delegate: 'CPU' } }),
+            () =>
+              this.onmessage?.({ data: { type: 'ready', variant: data.variant, delegate: 'CPU' } }),
             20,
           );
           return;
@@ -151,13 +152,13 @@ test('a front-facing phone counts ten continuous right-arm depth curls with auto
   });
   try {
     await page.goto(
-      `${process.env.FUZZFIT_VERIFY_URL || 'http://localhost:3000'}/demo?view=practice`,
+      `${process.env.GEEZ_SQUAD_VERIFY_URL || 'http://localhost:3000'}/demo?view=practice`,
     );
     await page.getByLabel('Exercise to practice').selectOption('curl');
     await page.getByRole('button', { name: 'Workout settings', exact: true }).click();
     await expect(page.getByLabel('Reps per set')).toHaveValue('12');
     await page.locator('details.tracking-settings > summary').click();
-    await expect(page.getByLabel('Tracking quality')).toHaveValue('full');
+    await expect(page.getByLabel('Tracking quality')).toHaveValue('heavy');
     await expect(page.getByLabel('Body side')).toHaveValue('auto');
     await page.getByRole('button', { name: 'Close dialog' }).click();
     await page.getByRole('button', { name: 'Enable camera' }).click();
@@ -195,9 +196,11 @@ test('a front-facing phone counts ten continuous right-arm depth curls with auto
     expect(fixture.counts).toEqual(
       Array.from({ length: 11 }, (_, index) => String(index).padStart(2, '0')),
     );
-    expect(fixture.variants).toEqual(['full']);
+    expect(fixture.variants).toEqual(['heavy']);
     expect(fixture.overlayFrames).toBeGreaterThan(50);
-    expect(fixture.filteredFrames).toBeGreaterThan(25);
+    // Visualization uses MediaPipe's native filtered landmarks from the analyzed
+    // frame; the rep signal has its own filter without delaying the drawing.
+    expect(fixture.filteredFrames).toBe(0);
     await page.getByRole('button', { name: 'Workout settings', exact: true }).click();
     const details = page.locator('.movement-metrics');
     await expect(

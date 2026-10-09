@@ -4,7 +4,7 @@ Reviewed 6 October 2026 against the current source and primary model documentati
 
 ## Decision
 
-Retain the current MediaPipe implementation. The proposal describes a useful starting architecture that is already present in Fuzzfit. Replacing the current engine with the simpler example would discard implemented tracking gates, camera lifecycle handling, and counting safeguards. This is an architectural recommendation, not evidence that the current scores or thresholds are validated or optimal.
+Retain the current MediaPipe implementation. The proposal describes a useful starting architecture that is already present in Geez Squad. Replacing the current engine with the simpler example would discard implemented tracking gates, camera lifecycle handling, and counting safeguards. This is an architectural recommendation, not evidence that the current scores or thresholds are validated or optimal.
 
 | Proposal | Current implementation | Decision |
 | --- | --- | --- |

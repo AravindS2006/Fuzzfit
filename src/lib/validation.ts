@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { exerciseIds } from './exercise-profiles';
+import { MAX_CLASS_CLIENTS } from './class-policy';
 export const exerciseSchema = z.enum(exerciseIds);
 const identifier = z.string().min(1).max(100);
 const block = z.object({
@@ -53,9 +54,10 @@ export const commandSchema = z.discriminatedUnion('action', [
     title: z.string().trim().min(2).max(80),
     startsAt: z.iso.datetime(),
     duration: z.number().int().min(10).max(120),
-    capacity: z.number().int().min(1).max(8),
+    capacity: z.number().int().min(1).max(MAX_CLASS_CLIENTS),
     planId: identifier.optional(),
-    participantIds: z.array(identifier).max(8),
+    participantIds: z.array(identifier).max(MAX_CLASS_CLIENTS),
+    includeAllClients: z.boolean().default(false),
   }),
   z.object({
     action: z.literal('classControl'),

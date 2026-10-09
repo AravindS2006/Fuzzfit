@@ -61,3 +61,44 @@ it('recovers one lost GPU runtime through CPU and closes every frame bitmap', as
   expect(created).toBe(2);
   expect(bitmaps).toBe(3);
 });
+it('transfers the analyzed image back once and leaves closing it to the renderer', async () => {
+  const messages: { message: Record<string, unknown>; transfer: unknown[] }[] = [];
+  let closed = 0;
+  const bitmap = { close: () => closed++ };
+  const self = {
+    exports: {},
+    onmessage: null as unknown as (event: { data: Record<string, unknown> }) => Promise<void>,
+    postMessage: (message: Record<string, unknown>, transfer: unknown[] = []) =>
+      messages.push({ message, transfer }),
+  };
+  vm.runInNewContext(readFileSync('public/pose-worker.js', 'utf8'), {
+    self,
+    importScripts: () => {
+      self.exports = {
+        FilesetResolver: { forVisionTasks: async () => ({}) },
+        PoseLandmarker: {
+          createFromOptions: async () => ({
+            detectForVideo: () => ({ landmarks: [], worldLandmarks: [] }),
+          }),
+        },
+      };
+    },
+    performance: { now: () => 0 },
+    console,
+  });
+  await self.onmessage({ data: { type: 'init', variant: 'heavy', cpuOnly: true } });
+  await self.onmessage({
+    data: { type: 'frame', timestamp: 100, width: 1280, height: 720, bitmap, presentFrame: true },
+  });
+  expect(messages[1].message).toMatchObject({
+    type: 'result',
+    bitmap,
+    timestamp: 100,
+    width: 1280,
+    height: 720,
+  });
+  expect(messages[1].transfer).toEqual([bitmap]);
+  expect(closed).toBe(0);
+  bitmap.close();
+  expect(closed).toBe(1);
+});

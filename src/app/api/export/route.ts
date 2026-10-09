@@ -43,7 +43,7 @@ export async function GET() {
       },
       {
         headers: {
-          'Content-Disposition': 'attachment; filename="fuzzfit-data.json"',
+          'Content-Disposition': 'attachment; filename="geez-squad-data.json"',
           'Cache-Control': 'private, no-store',
         },
       },

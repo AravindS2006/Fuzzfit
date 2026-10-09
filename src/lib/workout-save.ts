@@ -1,10 +1,11 @@
 import { fetchJson } from './client';
 import type { WorkoutSetRecord } from './types';
-const key = 'fuzzfit:pending-sets:v1';
+import { readBrowserPreference } from './browser-preferences';
+const key = 'geez-squad:pending-sets:v1';
 type Pending = { userId: string; record: WorkoutSetRecord };
 function read(): Pending[] {
   try {
-    const value = JSON.parse(localStorage.getItem(key) || '[]');
+    const value = JSON.parse(readBrowserPreference(key) || '[]');
     return Array.isArray(value)
       ? value
           .filter(

@@ -2,7 +2,7 @@ import type { ExerciseId } from './types';
 import { getExerciseProfile, type ExerciseProfile } from './exercise-profiles';
 import { defaultWorkoutConfig, normalizeWorkoutConfig, type WorkoutConfig } from './workout-config';
 
-export const RULE_VERSION = 'profile-v3';
+export const RULE_VERSION = 'profile-v4';
 export type Landmark = { x: number; y: number; z?: number; visibility?: number; presence?: number };
 export type Analysis = {
   reps: number;
@@ -58,6 +58,8 @@ export type PoseState = {
   cycleConfidenceTotal: number;
   cycleSamples: number;
   cycleFormValid: boolean;
+  cycleInvalidMs: number;
+  previousFormValid: boolean;
   lastRepQuality: number | null;
   rejectionReason: string | null;
   geometrySource: '2d' | '3d' | null;
@@ -99,6 +101,8 @@ export function initialPoseState(): PoseState {
     cycleConfidenceTotal: 0,
     cycleSamples: 0,
     cycleFormValid: true,
+    cycleInvalidMs: 0,
+    previousFormValid: true,
     lastRepQuality: null,
     rejectionReason: null,
     geometrySource: null,
@@ -269,6 +273,8 @@ function worldGeometry(
         Number.isFinite(point.x) &&
         Number.isFinite(point.y) &&
         Number.isFinite(point.z) &&
+        (point.visibility === undefined || point.visibility >= 0.65) &&
+        (point.presence === undefined || point.presence >= 0.65) &&
         Math.abs(point.x) < 3 &&
         Math.abs(point.y) < 3 &&
         Math.abs(point.z!) < 3
@@ -810,16 +816,33 @@ export function analyzePose(
     state.cycleConfidenceTotal = 0;
     state.cycleSamples = 0;
     state.cycleFormValid = true;
+    state.cycleInvalidMs = 0;
+    state.previousFormValid = form.valid;
     state.returnEvidenceRequired = false;
   }
   if (state.stage === 'working') {
     if (!returningFromLoss && gap > 0 && gap <= profile.occlusionGraceMs) state.observedMs += gap;
     state.cycleMin = Math.min(state.cycleMin, rawSignal);
     state.cycleMax = Math.max(state.cycleMax, rawSignal);
-    state.cycleFormTotal += form.score;
-    state.cycleConfidenceTotal += confidence;
-    state.cycleSamples += 1;
-    state.cycleFormValid &&= form.valid;
+    const observedInterval =
+      !returningFromLoss && gap > 0 && gap <= profile.occlusionGraceMs ? gap : 0;
+    state.cycleFormTotal += form.score * observedInterval;
+    state.cycleConfidenceTotal += confidence * observedInterval;
+    state.cycleSamples += observedInterval;
+    // Brief landmark noise must not invalidate a whole cycle. Both adjacent
+    // observations must show bad alignment before that interval counts as bad.
+    if (
+      !returningFromLoss &&
+      gap > 0 &&
+      gap <= profile.occlusionGraceMs &&
+      !form.valid &&
+      !state.previousFormValid
+    )
+      state.cycleInvalidMs += gap;
+    state.previousFormValid = form.valid;
+    state.cycleFormValid = !(
+      state.cycleInvalidMs >= 150 && state.cycleInvalidMs / Math.max(1, state.observedMs) >= 0.2
+    );
     const observedApproach = decreasing
       ? rawVelocity < -5 && state.rawVelocity < -5
       : rawVelocity > 5 && state.rawVelocity > 5;

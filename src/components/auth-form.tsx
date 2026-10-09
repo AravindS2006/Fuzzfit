@@ -233,7 +233,7 @@ export function AuthForm({
           )}
           {signupEnabled && (
             <p className="auth-switch">
-              {mode === 'login' ? 'New to Fuzzfit?' : 'Already have an account?'}{' '}
+              {mode === 'login' ? 'New to Geez Squad?' : 'Already have an account?'}{' '}
               <button
                 type="button"
                 onClick={() => {

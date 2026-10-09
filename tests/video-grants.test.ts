@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { AccessToken, TokenVerifier } from 'livekit-server-sdk';
 import { classVideoGrant } from '../src/lib/video-grants';
+import { existingVideoRoomName, newVideoRoomName } from '../src/lib/room-identity';
 
 describe('class meeting publication permissions', () => {
+  it('keeps migrated live sessions in their original room and starts new sessions under Geez Squad', () => {
+    const legacy = existingVideoRoomName({ id: 'test-class', videoRoomName: null });
+    expect(legacy).toBe('fuzzfit-test-class');
+    expect(classVideoGrant('test-class', false, legacy).room).toBe(legacy);
+    const created = newVideoRoomName('new-class');
+    expect(existingVideoRoomName({ id: 'new-class', videoRoomName: created })).toBe(
+      'geez-squad-new-class',
+    );
+  });
   const key = 'test-key';
   const secret = 'test-secret-for-signed-token-verification';
 
@@ -20,7 +30,7 @@ describe('class meeting publication permissions', () => {
       'screen_share',
       'screen_share_audio',
     ]);
-    expect(grant.room).toBe('fuzzfit-test-class');
+    expect(grant.room).toBe('geez-squad-test-class');
   });
 
   it('keeps trainees limited to their camera and microphone', async () => {

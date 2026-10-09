@@ -30,6 +30,7 @@ import {
   RULE_VERSION,
 } from '@/lib/pose-engine';
 import { exercises } from '@/lib/catalog';
+import { readBrowserPreference } from '@/lib/browser-preferences';
 import {
   defaultWorkoutConfig,
   normalizeWorkoutConfig,
@@ -44,6 +45,11 @@ import {
 } from '@/lib/workout-start';
 import { workoutSetProgress } from '@/lib/workout-progress';
 import { exerciseIds, getExerciseProfile, isHoldExercise } from '@/lib/exercise-profiles';
+import {
+  beginMovementCalibration,
+  advanceMovementCalibration,
+  type MovementCalibration,
+} from '@/lib/movement-calibration';
 
 const movementSteps = Object.fromEntries(
   exerciseIds.map((id) => {
@@ -126,11 +132,15 @@ export function CameraAnalyzer({
   const [countdown, setCountdown] = useState<number | null>(null);
   const [countdownPaused, setCountdownPaused] = useState(false);
   const [cueExpanded, setCueExpanded] = useState(false);
-  const [modelVariant, setModelVariant] = useState<'lite' | 'full' | 'heavy'>('full');
+  const calibrationRef = useRef<MovementCalibration | null>(null);
+  const [calibration, setCalibration] = useState<MovementCalibration | null>(null);
+  const [modelVariant, setModelVariant] = useState<'lite' | 'full' | 'heavy'>('heavy');
   const modelVariantRef = useRef(modelVariant);
   modelVariantRef.current = modelVariant;
   const [modelInfo, setModelInfo] = useState({ variant: 'full', delegate: '', fps: 0 });
   const frameStats = useRef({ frames: 0, since: 0 });
+  const slowFrames = useRef(0);
+  const [qualityNotice, setQualityNotice] = useState('');
   const frameRequest = useRef<number | null>(null);
   const armedRef = useRef(false);
   const armedAt = useRef(0);
@@ -188,6 +198,8 @@ export function CameraAnalyzer({
   streamCallback.current = onStream;
   voiceRef.current = voice;
   function stop() {
+    calibrationRef.current = null;
+    setCalibration(null);
     cancelStart();
     if (initDeadline.current) clearTimeout(initDeadline.current);
     initDeadline.current = null;
@@ -337,6 +349,8 @@ export function CameraAnalyzer({
     setShowGo(false);
   }
   function startSet() {
+    calibrationRef.current = null;
+    setCalibration(null);
     if (
       pausedRef.current ||
       document.hidden ||
@@ -469,7 +483,7 @@ export function CameraAnalyzer({
     setCompletedSets([]);
     let saved: Partial<WorkoutConfig> = {};
     try {
-      saved = JSON.parse(localStorage.getItem(`fuzzfit-workout-v3-${exercise}`) || '{}');
+      saved = JSON.parse(readBrowserPreference(`geez-squad-workout-v3-${exercise}`) || '{}');
     } catch {}
     setConfig(
       normalizeWorkoutConfig(exercise, {
@@ -591,7 +605,12 @@ export function CameraAnalyzer({
       const camera =
         external ??
         (await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30 },
+            facingMode: 'user',
+          },
           audio: false,
         }));
       if (generation.current !== run) {
@@ -615,6 +634,7 @@ export function CameraAnalyzer({
         inFlight.current = false;
         lastVideoTime.current = -1;
         trackingBackend.current = '';
+        slowFrames.current = 0;
         if (cpuOnly) {
           recoverOnCPU.current = null;
           invalidateTracking('Restarting tracking using CPU. Hold your starting position.');
@@ -630,7 +650,10 @@ export function CameraAnalyzer({
           }
         };
         task.onmessage = ({ data }) => {
-          if (generation.current !== run || worker.current !== task) return;
+          if (generation.current !== run || worker.current !== task) {
+            data.bitmap?.close();
+            return;
+          }
           if (data.type === 'backend') {
             trackingBackend.current = data.delegate;
             if (data.delegate === 'CPU') recoverOnCPU.current = null;
@@ -682,6 +705,7 @@ export function CameraAnalyzer({
                   {
                     type: 'frame',
                     bitmap,
+                    presentFrame: true,
                     timestamp,
                     width: v.videoWidth,
                     height: v.videoHeight,
@@ -705,6 +729,21 @@ export function CameraAnalyzer({
           if (data.type === 'result') {
             inFlight.current = false;
             const now = performance.now();
+            slowFrames.current = data.inferenceMs > 200 ? slowFrames.current + 1 : 0;
+            if (modelVariantRef.current === 'heavy' && slowFrames.current >= 5) {
+              data.bitmap?.close();
+              modelVariantRef.current = 'full';
+              setModelVariant('full');
+              setQualityNotice(
+                'Switched to the Full model because Heavy was too slow on this device. Your completed reps are retained.',
+              );
+              invalidateTracking(
+                'Hold your starting position while tracking adapts to this device.',
+              );
+              setStatus('loading');
+              launchWorker(trackingBackend.current === 'CPU');
+              return;
+            }
             if (
               document.hidden ||
               pausedRef.current ||
@@ -714,6 +753,7 @@ export function CameraAnalyzer({
             ) {
               staleFrame.current = true;
               invalidateTracking('Waiting for fresh camera frames before tracking continues.');
+              data.bitmap?.close();
               return;
             }
             lastFrameAt.current = data.timestamp;
@@ -738,6 +778,21 @@ export function CameraAnalyzer({
               configRef.current,
               data.worldPoses,
             );
+            if (calibrationRef.current) {
+              const measured = advanceMovementCalibration(
+                calibrationRef.current,
+                result,
+                data.timestamp,
+                exerciseRef.current,
+              );
+              calibrationRef.current = measured;
+              setCalibration(measured);
+              if (measured.phase === 'complete' && measured.range) {
+                updateConfig(measured.range);
+                calibrationRef.current = null;
+                previewState.current = initialPoseState();
+              } else if (measured.phase === 'failed') calibrationRef.current = null;
+            }
             const continuing = armedRef.current && startClock.current.acquired;
             const ready =
               canStartWorkout(result, exerciseRef.current, configRef.current, continuing) &&
@@ -808,11 +863,7 @@ export function CameraAnalyzer({
             }
             setAnalysis(result);
             analysisCallback.current?.(result);
-            draw(
-              result.filteredLandmarks ?? (result.tracked ? (data.poses[0] ?? []) : []),
-              data.width,
-              data.height,
-            );
+            draw(result.tracked ? (data.poses[0] ?? []) : [], data.width, data.height, data.bitmap);
             if (modeRef.current === 'setup' || modeRef.current === 'active')
               announce(
                 result.cue,
@@ -823,14 +874,22 @@ export function CameraAnalyzer({
               );
           }
         };
-        initDeadline.current = setTimeout(() => {
-          if (generation.current !== run || worker.current !== task) return;
-          stop();
-          setStatus('off');
-          setError(
-            'Pose tracking took too long to load. Check your connection and retry camera analysis.',
-          );
-        }, 45000);
+        initDeadline.current = setTimeout(
+          () => {
+            if (generation.current !== run || worker.current !== task) return;
+            if (!cpuOnly) {
+              setQualityNotice('GPU initialization took too long. Tracking is restarting on CPU.');
+              launchWorker(true);
+              return;
+            }
+            stop();
+            setStatus('off');
+            setError(
+              'Pose tracking took too long to load. Check your connection and retry camera analysis.',
+            );
+          },
+          cpuOnly ? 45000 : 15000,
+        );
         task.postMessage({ type: 'init', variant: modelVariantRef.current, cpuOnly });
       };
       recoverOnCPU.current = () => launchWorker(true);
@@ -853,30 +912,37 @@ export function CameraAnalyzer({
       );
     }
   }
-  function draw(landmarks: Landmark[], width: number, height: number) {
-    const c = canvas.current;
-    if (!c) return;
-    c.width = width;
-    c.height = height;
-    const ctx = c.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, width, height);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = '#cbff65';
-    ctx.fillStyle = '#cbff65';
-    for (const [a, b] of skeletonConnections) {
-      if ((landmarks[a]?.visibility ?? 0) < 0.65 || (landmarks[b]?.visibility ?? 0) < 0.65)
-        continue;
-      ctx.beginPath();
-      ctx.moveTo(landmarks[a].x * width, landmarks[a].y * height);
-      ctx.lineTo(landmarks[b].x * width, landmarks[b].y * height);
-      ctx.stroke();
-    }
-    for (const p of landmarks.slice(11)) {
-      if ((p.visibility ?? 0) < 0.65) continue;
-      ctx.beginPath();
-      ctx.arc(p.x * width, p.y * height, 4, 0, Math.PI * 2);
-      ctx.fill();
+  function draw(landmarks: Landmark[], width: number, height: number, bitmap?: ImageBitmap) {
+    try {
+      const c = canvas.current;
+      if (!c) return;
+      c.width = width;
+      c.height = height;
+      const ctx = c.getContext('2d');
+      if (!ctx) return;
+      ctx.clearRect(0, 0, width, height);
+      // Present the analyzed image and its landmarks together. A separate live
+      // video can otherwise move ahead of inference and make joints look misplaced.
+      if (bitmap) ctx.drawImage(bitmap, 0, 0, width, height);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#cbff65';
+      ctx.fillStyle = '#cbff65';
+      for (const [a, b] of skeletonConnections) {
+        if ((landmarks[a]?.visibility ?? 0) < 0.65 || (landmarks[b]?.visibility ?? 0) < 0.65)
+          continue;
+        ctx.beginPath();
+        ctx.moveTo(landmarks[a].x * width, landmarks[a].y * height);
+        ctx.lineTo(landmarks[b].x * width, landmarks[b].y * height);
+        ctx.stroke();
+      }
+      for (const p of landmarks.slice(11)) {
+        if ((p.visibility ?? 0) < 0.65) continue;
+        ctx.beginPath();
+        ctx.arc(p.x * width, p.y * height, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } finally {
+      bitmap?.close();
     }
   }
   const definition = exercises.find((e) => e.id === exercise)!;
@@ -885,14 +951,16 @@ export function CameraAnalyzer({
     workoutSetProgress(exercise, analysis.reps, tally.current.holdMs, baseline.current),
   );
   const updateConfig = (change: Partial<WorkoutConfig>) => {
-    const next = normalizeWorkoutConfig(exercise, { ...config, ...change });
+    const next = normalizeWorkoutConfig(exerciseRef.current, { ...configRef.current, ...change });
+    configRef.current = next;
     setConfig(next);
     try {
-      localStorage.setItem(`fuzzfit-workout-v3-${exercise}`, JSON.stringify(next));
+      localStorage.setItem(`geez-squad-workout-v3-${exerciseRef.current}`, JSON.stringify(next));
     } catch {}
   };
   const cue =
-    paused || localPaused
+    calibration?.cue ??
+    (paused || localPaused
       ? 'Tracking paused. Take a moment to reset.'
       : armed
         ? countdown === null
@@ -910,7 +978,7 @@ export function CameraAnalyzer({
                 ? 'Preparing pose tracking. Keep your body in view.'
                 : mode === 'setup' && analysis.tracked
                   ? 'Tap Start set, then step back. Wait for Go.'
-                  : analysis.cue;
+                  : analysis.cue);
   const currentSet = Math.min(completedSets.length + 1, config.sets);
   return (
     <div className="camera-analyzer meeting-analyzer">
@@ -925,6 +993,8 @@ export function CameraAnalyzer({
             aria-label="Workout settings"
             onClick={() => {
               cancelStart();
+              calibrationRef.current = null;
+              setCalibration(null);
               setSettingsOpen(true);
             }}
           >
@@ -1084,7 +1154,12 @@ export function CameraAnalyzer({
             {!armed && (mode === 'setup' || mode === 'rest') && (
               <button
                 className="button lime"
-                disabled={paused || status !== 'ready' || (mode === 'rest' && restLeft > 0)}
+                disabled={
+                  paused ||
+                  status !== 'ready' ||
+                  Boolean(calibrationRef.current) ||
+                  (mode === 'rest' && restLeft > 0)
+                }
                 onClick={startSet}
               >
                 <Play size={17} /> {mode === 'rest' ? 'Start next set' : 'Start set'}
@@ -1106,6 +1181,17 @@ export function CameraAnalyzer({
             {armed && (
               <button className="button outline" onClick={cancelStart}>
                 Cancel start
+              </button>
+            )}
+            {calibrationRef.current && (
+              <button
+                className="button outline"
+                onClick={() => {
+                  calibrationRef.current = null;
+                  setCalibration(null);
+                }}
+              >
+                Cancel calibration
               </button>
             )}
             {mode === 'rest' && restLeft > 0 && (
@@ -1272,6 +1358,7 @@ export function CameraAnalyzer({
                       const next = event.target.value as typeof modelVariant;
                       modelVariantRef.current = next;
                       setModelVariant(next);
+                      setQualityNotice('');
                       cancelStart();
                       if (status !== 'off') {
                         const shared = ownStream.current
@@ -1281,16 +1368,21 @@ export function CameraAnalyzer({
                       }
                     }}
                   >
-                    <option value="full">Accurate · Recommended</option>
-                    <option value="heavy">High precision · Faster devices</option>
+                    <option value="heavy">Heavy · Highest model accuracy</option>
+                    <option value="full">Full · Balanced accuracy and speed</option>
                     <option value="lite">Performance · Lower accuracy</option>
                   </select>
                 </label>
                 {status === 'ready' && (
                   <p className="microcopy">
                     Tracking: {modelInfo.variant} · {modelInfo.delegate || 'device'} ·{' '}
-                    {modelInfo.fps} analyzed frames/sec. If tracking feels slow, use Accurate or
+                    {modelInfo.fps} analyzed frames/sec. If tracking feels slow, use Full or
                     Performance mode.
+                  </p>
+                )}
+                {qualityNotice && (
+                  <p className="microcopy" role="status">
+                    {qualityNotice}
                   </p>
                 )}
                 <div className="workout-fields">
@@ -1348,6 +1440,23 @@ export function CameraAnalyzer({
                   )}
                 </div>
               </details>
+              {!profile.isHold && mode === 'setup' && (
+                <button
+                  type="button"
+                  className="button outline"
+                  disabled={status !== 'ready' || paused || Boolean(calibrationRef.current)}
+                  onClick={() => {
+                    cancelStart();
+                    const next = beginMovementCalibration(performance.now());
+                    calibrationRef.current = next;
+                    setCalibration(next);
+                    setSettingsOpen(false);
+                    announce(next.cue, true);
+                  }}
+                >
+                  Calibrate movement with your coach
+                </button>
+              )}
             </section>
             <section className="analyzer-instructions" aria-label="How to do this exercise">
               <h3>Movement & camera setup</h3>

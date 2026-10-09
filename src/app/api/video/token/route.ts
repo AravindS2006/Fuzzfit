@@ -10,6 +10,7 @@ import {
   safeError,
 } from '@/lib/security';
 import { classVideoGrant } from '@/lib/video-grants';
+import { existingVideoRoomName } from '@/lib/room-identity';
 export async function POST(request: Request) {
   try {
     const user = await requireUser();
@@ -33,7 +34,9 @@ export async function POST(request: Request) {
       name: user.name,
       ttl: '5m',
     });
-    token.addGrant(classVideoGrant(item.id, item.studio.ownerId === user.id));
+    token.addGrant(
+      classVideoGrant(item.id, item.studio.ownerId === user.id, existingVideoRoomName(item)),
+    );
     return NextResponse.json(
       { token: await token.toJwt(), url: process.env.LIVEKIT_URL },
       { headers: { 'Cache-Control': 'no-store' } },

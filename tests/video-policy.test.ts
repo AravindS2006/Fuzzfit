@@ -4,7 +4,7 @@ import config from '../next.config';
 afterEach(() => vi.unstubAllEnvs());
 describe('LiveKit connection security policy', () => {
   it('allows Cloud regional endpoints for room connection and reconnection', async () => {
-    vi.stubEnv('LIVEKIT_URL', 'wss://fuzzfit-test.livekit.cloud');
+    vi.stubEnv('LIVEKIT_URL', 'wss://geez-squad-test.livekit.cloud');
     const headers = await config.headers!();
     const policy = headers[0].headers.find((h) => h.key === 'Content-Security-Policy')!.value;
     expect(policy).toContain('wss://*.livekit.cloud');

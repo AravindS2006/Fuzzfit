@@ -19,7 +19,10 @@ test('the home URL enters the app and asks signed-out visitors to sign in', asyn
   await page.goto('/');
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole('heading', { name: 'Welcome back.' })).toBeVisible();
-  await expect(page.getByRole('link', { name: /^fuzzfit\s*\.$/ })).toHaveAttribute('href', '/app');
+  await expect(page.getByRole('link', { name: 'Geez Squad', exact: true })).toHaveAttribute(
+    'href',
+    '/app',
+  );
   await expect(page.getByRole('link', { name: /Explore the sample studio/ })).toHaveAttribute(
     'href',
     '/demo',

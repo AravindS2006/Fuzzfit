@@ -1,9 +1,13 @@
 import { TrackSource, type VideoGrant } from 'livekit-server-sdk';
 
-export function classVideoGrant(classId: string, isCoach: boolean): VideoGrant {
+export function classVideoGrant(
+  classId: string,
+  isCoach: boolean,
+  roomName = `geez-squad-${classId}`,
+): VideoGrant {
   return {
     roomJoin: true,
-    room: `fuzzfit-${classId}`,
+    room: roomName,
     canPublish: true,
     canSubscribe: true,
     canPublishData: false,
