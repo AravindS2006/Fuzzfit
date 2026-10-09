@@ -23,7 +23,7 @@ self.onmessage = async ({ data }) => {
         minTrackingConfidence: 0.5,
       };
       cpuOptions = options;
-      if (typeof OffscreenCanvas !== 'undefined') {
+      if (!data.cpuOnly && typeof OffscreenCanvas !== 'undefined') {
         try {
           model = await PoseLandmarker.createFromOptions(files, {
             ...options,

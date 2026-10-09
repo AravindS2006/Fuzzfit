@@ -138,6 +138,8 @@ export function CameraAnalyzer({
   const lastCountdownSound = useRef<number | null>(null);
   const lastFrameAt = useRef(0);
   const staleFrame = useRef(false);
+  const trackingBackend = useRef('');
+  const recoverOnCPU = useRef<(() => void) | null>(null);
   const initDeadline = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modeRef = useRef<Mode>('setup');
   const configRef = useRef(config);
@@ -197,6 +199,8 @@ export function CameraAnalyzer({
     frameRequest.current = null;
     worker.current?.terminate();
     worker.current = null;
+    recoverOnCPU.current = null;
+    trackingBackend.current = '';
     inFlight.current = false;
     ownStream.current?.getTracks().forEach((t) => t.stop());
     ownStream.current = null;
@@ -543,13 +547,15 @@ export function CameraAnalyzer({
   useEffect(() => {
     if (status !== 'ready') return;
     const watchdog = setInterval(() => {
-      if (
-        document.hidden ||
-        pausedRef.current ||
-        staleFrame.current ||
-        performance.now() - lastFrameAt.current <= MAX_START_FRAME_GAP_MS
-      )
+      if (document.hidden || pausedRef.current) return;
+      const gap = performance.now() - lastFrameAt.current;
+      // A GPU can initialize successfully yet block synchronously during
+      // inference. Replace that worker once rather than waiting indefinitely.
+      if (trackingBackend.current === 'GPU' && inFlight.current && gap > 5000) {
+        recoverOnCPU.current?.();
         return;
+      }
+      if (staleFrame.current || gap <= MAX_START_FRAME_GAP_MS) return;
       staleFrame.current = true;
       invalidateTracking(
         'Camera frames paused. Wait for tracking to recover or restart camera analysis.',
@@ -599,214 +605,236 @@ export function CameraAnalyzer({
       video.current.srcObject = camera;
       await video.current.play();
       if (generation.current !== run) return;
-      const task = new Worker('/pose-worker.js');
-      worker.current = task;
-      task.onerror = () => {
-        if (generation.current === run) {
-          stop();
-          setStatus('off');
-          setError('Camera analysis could not start. Retry in a supported browser.');
+      const launchWorker = (cpuOnly = false) => {
+        if (timer.current) clearInterval(timer.current);
+        timer.current = null;
+        if (frameRequest.current !== null)
+          video.current?.cancelVideoFrameCallback?.(frameRequest.current);
+        frameRequest.current = null;
+        worker.current?.terminate();
+        inFlight.current = false;
+        lastVideoTime.current = -1;
+        trackingBackend.current = '';
+        if (cpuOnly) {
+          recoverOnCPU.current = null;
+          invalidateTracking('Restarting tracking using CPU. Hold your starting position.');
+          setStatus('loading');
         }
-      };
-      task.onmessage = ({ data }) => {
-        if (generation.current !== run) return;
-        if (data.type === 'backend') {
-          setModelInfo((previous) => ({ ...previous, delegate: data.delegate }));
-          invalidateTracking('Tracking recovered using CPU. Return to your starting position.');
-          return;
-        }
-        if (data.type === 'error') {
-          stop();
-          setStatus('off');
-          setError(data.message);
-          return;
-        }
-        if (data.type === 'ready') {
-          if (initDeadline.current) clearTimeout(initDeadline.current);
-          initDeadline.current = null;
-          lastFrameAt.current = performance.now();
-          staleFrame.current = false;
-          setStatus('ready');
-          frameStats.current = { frames: 0, since: performance.now() };
-          setModelInfo({
-            variant: data.variant ?? modelVariantRef.current,
-            delegate: data.delegate ?? '',
-            fps: 0,
-          });
-          const captureFrame = async () => {
-            const v = video.current;
-            if (
-              !v ||
-              v.readyState < 2 ||
-              inFlight.current ||
-              pausedRef.current ||
-              document.hidden ||
-              lastVideoTime.current === v.currentTime
-            )
-              return;
-            lastVideoTime.current = v.currentTime;
-            const timestamp = performance.now();
-            inFlight.current = true;
-            try {
-              const bitmap = await createImageBitmap(v);
-              if (generation.current !== run || !worker.current) {
-                bitmap.close();
-                return;
-              }
-              task.postMessage(
-                {
-                  type: 'frame',
-                  bitmap,
-                  timestamp,
-                  width: v.videoWidth,
-                  height: v.videoHeight,
-                },
-                [bitmap],
-              );
-            } catch {
-              inFlight.current = false;
-            }
-          };
-          const v = video.current;
-          if (v?.requestVideoFrameCallback) {
-            const onFrame = () => {
-              if (generation.current !== run) return;
-              frameRequest.current = v.requestVideoFrameCallback(onFrame);
-              void captureFrame();
-            };
-            frameRequest.current = v.requestVideoFrameCallback(onFrame);
-          } else timer.current = setInterval(() => void captureFrame(), 33);
-        }
-        if (data.type === 'result') {
-          inFlight.current = false;
-          const now = performance.now();
-          if (
-            document.hidden ||
-            pausedRef.current ||
-            !Number.isFinite(data.timestamp) ||
-            now - data.timestamp > MAX_START_FRAME_GAP_MS ||
-            data.timestamp > now
-          ) {
-            staleFrame.current = true;
-            invalidateTracking('Waiting for fresh camera frames before tracking continues.');
+        const task = new Worker('/pose-worker.js');
+        worker.current = task;
+        task.onerror = () => {
+          if (generation.current === run && worker.current === task) {
+            stop();
+            setStatus('off');
+            setError('Camera analysis could not start. Retry in a supported browser.');
+          }
+        };
+        task.onmessage = ({ data }) => {
+          if (generation.current !== run || worker.current !== task) return;
+          if (data.type === 'backend') {
+            trackingBackend.current = data.delegate;
+            if (data.delegate === 'CPU') recoverOnCPU.current = null;
+            setModelInfo((previous) => ({ ...previous, delegate: data.delegate }));
+            invalidateTracking('Tracking recovered using CPU. Return to your starting position.');
             return;
           }
-          lastFrameAt.current = data.timestamp;
-          staleFrame.current = false;
-          frameStats.current.frames++;
-          if (now - frameStats.current.since >= 1000) {
-            const fps = Math.round(
-              (frameStats.current.frames * 1000) / (now - frameStats.current.since),
-            );
-            setModelInfo((previous) => ({ ...previous, fps }));
-            frameStats.current = { frames: 0, since: now };
+          if (data.type === 'error') {
+            stop();
+            setStatus('off');
+            setError(data.message);
+            return;
           }
-          const activeSet = modeRef.current === 'active';
-          const result = analyzePose(
-            data.poses,
-            exerciseRef.current,
-            activeSet ? state.current : previewState.current,
-            data.timestamp,
-            data.width,
-            data.height,
-            pausedRef.current,
-            configRef.current,
-            data.worldPoses,
-          );
-          const continuing = armedRef.current && startClock.current.acquired;
-          const ready =
-            canStartWorkout(result, exerciseRef.current, configRef.current, continuing) &&
-            (continuing ||
-              isHoldExercise(exerciseRef.current) ||
-              previewState.current.stage === 'ready');
-          if (armedRef.current) {
-            startClock.current = advanceStartCountdown(
-              startClock.current,
-              ready && data.timestamp >= armedAt.current,
-              data.timestamp,
-            );
-            const remaining = !startClock.current.acquired
-              ? null
-              : Math.ceil(startClock.current.remainingMs / 1000);
-            setCountdown(remaining);
-            setCountdownPaused(startClock.current.invalidSince !== null);
-            if (remaining !== null && remaining > 0 && remaining !== lastCountdownSound.current) {
-              signalRep();
-              lastCountdownSound.current = remaining;
-            }
-            if (ready && startClock.current.remainingMs === 0) activateSet(data.timestamp);
+          if (data.type === 'ready') {
+            if (initDeadline.current) clearTimeout(initDeadline.current);
+            initDeadline.current = null;
+            lastFrameAt.current = performance.now();
+            staleFrame.current = false;
+            trackingBackend.current = data.delegate;
+            if (data.delegate === 'CPU') recoverOnCPU.current = null;
+            setStatus('ready');
+            frameStats.current = { frames: 0, since: performance.now() };
+            setModelInfo({
+              variant: data.variant ?? modelVariantRef.current,
+              delegate: data.delegate ?? '',
+              fps: 0,
+            });
+            const captureFrame = async () => {
+              const v = video.current;
+              if (
+                !v ||
+                v.readyState < 2 ||
+                inFlight.current ||
+                pausedRef.current ||
+                document.hidden ||
+                lastVideoTime.current === v.currentTime
+              )
+                return;
+              lastVideoTime.current = v.currentTime;
+              const timestamp = performance.now();
+              inFlight.current = true;
+              try {
+                const bitmap = await createImageBitmap(v);
+                if (generation.current !== run || worker.current !== task) {
+                  bitmap.close();
+                  return;
+                }
+                task.postMessage(
+                  {
+                    type: 'frame',
+                    bitmap,
+                    timestamp,
+                    width: v.videoWidth,
+                    height: v.videoHeight,
+                  },
+                  [bitmap],
+                );
+              } catch {
+                if (generation.current === run && worker.current === task) inFlight.current = false;
+              }
+            };
+            const v = video.current;
+            if (v?.requestVideoFrameCallback) {
+              const onFrame = () => {
+                if (generation.current !== run || worker.current !== task) return;
+                frameRequest.current = v.requestVideoFrameCallback(onFrame);
+                void captureFrame();
+              };
+              frameRequest.current = v.requestVideoFrameCallback(onFrame);
+            } else timer.current = setInterval(() => void captureFrame(), 33);
           }
-          if (activeSet) {
-            observeTrainingMetrics(
-              metrics.current,
-              result,
-              data.timestamp,
-              state.current.feedbackUntil,
-            );
-            lastObservedAt.current = new Date().toISOString();
-            const measured = trainingMetricsSummary(metrics.current);
-            result.trackingCoverage = measured.trackingCoverage;
-            result.rejectedReps = measured.rejectedReps;
-            if (result.reps > tally.current.reps) signalRep();
-            tally.current = { reps: state.current.reps, holdMs: state.current.holdMs };
-            if (result.score !== null) {
-              samples.current.count++;
-              samples.current.total += result.score;
+          if (data.type === 'result') {
+            inFlight.current = false;
+            const now = performance.now();
+            if (
+              document.hidden ||
+              pausedRef.current ||
+              !Number.isFinite(data.timestamp) ||
+              now - data.timestamp > MAX_START_FRAME_GAP_MS ||
+              data.timestamp > now
+            ) {
+              staleFrame.current = true;
+              invalidateTracking('Waiting for fresh camera frames before tracking continues.');
+              return;
             }
-            const progress = workoutSetProgress(
+            lastFrameAt.current = data.timestamp;
+            staleFrame.current = false;
+            frameStats.current.frames++;
+            if (now - frameStats.current.since >= 1000) {
+              const fps = Math.round(
+                (frameStats.current.frames * 1000) / (now - frameStats.current.since),
+              );
+              setModelInfo((previous) => ({ ...previous, fps }));
+              frameStats.current = { frames: 0, since: now };
+            }
+            const activeSet = modeRef.current === 'active';
+            const result = analyzePose(
+              data.poses,
               exerciseRef.current,
-              result.reps,
-              tally.current.holdMs,
-              baseline.current,
+              activeSet ? state.current : previewState.current,
+              data.timestamp,
+              data.width,
+              data.height,
+              pausedRef.current,
+              configRef.current,
+              data.worldPoses,
             );
-            if (progress >= configRef.current.target) finishSet(result);
-          } else {
-            result.reps = tally.current.reps;
-            result.holdSeconds = Math.floor(tally.current.holdMs / 1000);
-            result.score = null;
+            const continuing = armedRef.current && startClock.current.acquired;
+            const ready =
+              canStartWorkout(result, exerciseRef.current, configRef.current, continuing) &&
+              (continuing ||
+                isHoldExercise(exerciseRef.current) ||
+                previewState.current.stage === 'ready');
             if (armedRef.current) {
-              result.phase = !startClock.current.acquired
-                ? 'getting into position'
-                : 'starting countdown';
-              result.cue = ready
-                ? 'Hold your starting position through the countdown.'
-                : result.tracked
-                  ? `${movementSteps[exerciseRef.current][0]} Hold this starting position for the countdown.`
-                  : result.cue;
-            } else if (result.tracked && modeRef.current === 'rest') {
-              result.phase = 'resting';
-            } else if (result.tracked && modeRef.current === 'complete') {
-              result.phase = 'workout complete';
-            } else if (result.tracked && modeRef.current === 'setup' && ready) {
-              result.phase = 'ready to start';
+              startClock.current = advanceStartCountdown(
+                startClock.current,
+                ready && data.timestamp >= armedAt.current,
+                data.timestamp,
+              );
+              const remaining = !startClock.current.acquired
+                ? null
+                : Math.ceil(startClock.current.remainingMs / 1000);
+              setCountdown(remaining);
+              setCountdownPaused(startClock.current.invalidSince !== null);
+              if (remaining !== null && remaining > 0 && remaining !== lastCountdownSound.current) {
+                signalRep();
+                lastCountdownSound.current = remaining;
+              }
+              if (ready && startClock.current.remainingMs === 0) activateSet(data.timestamp);
             }
-          }
-          setAnalysis(result);
-          analysisCallback.current?.(result);
-          draw(
-            result.filteredLandmarks ?? (result.tracked ? (data.poses[0] ?? []) : []),
-            data.width,
-            data.height,
-          );
-          if (modeRef.current === 'setup' || modeRef.current === 'active')
-            announce(
-              result.cue,
-              false,
-              !result.tracked ||
-                result.cue.startsWith('Rep not counted') ||
-                (result.score !== null && result.score < 75),
+            if (activeSet) {
+              observeTrainingMetrics(
+                metrics.current,
+                result,
+                data.timestamp,
+                state.current.feedbackUntil,
+              );
+              lastObservedAt.current = new Date().toISOString();
+              const measured = trainingMetricsSummary(metrics.current);
+              result.trackingCoverage = measured.trackingCoverage;
+              result.rejectedReps = measured.rejectedReps;
+              if (result.reps > tally.current.reps) signalRep();
+              tally.current = { reps: state.current.reps, holdMs: state.current.holdMs };
+              if (result.score !== null) {
+                samples.current.count++;
+                samples.current.total += result.score;
+              }
+              const progress = workoutSetProgress(
+                exerciseRef.current,
+                result.reps,
+                tally.current.holdMs,
+                baseline.current,
+              );
+              if (progress >= configRef.current.target) finishSet(result);
+            } else {
+              result.reps = tally.current.reps;
+              result.holdSeconds = Math.floor(tally.current.holdMs / 1000);
+              result.score = null;
+              if (armedRef.current) {
+                result.phase = !startClock.current.acquired
+                  ? 'getting into position'
+                  : 'starting countdown';
+                result.cue = ready
+                  ? 'Hold your starting position through the countdown.'
+                  : result.tracked
+                    ? `${movementSteps[exerciseRef.current][0]} Hold this starting position for the countdown.`
+                    : result.cue;
+              } else if (result.tracked && modeRef.current === 'rest') {
+                result.phase = 'resting';
+              } else if (result.tracked && modeRef.current === 'complete') {
+                result.phase = 'workout complete';
+              } else if (result.tracked && modeRef.current === 'setup' && ready) {
+                result.phase = 'ready to start';
+              }
+            }
+            setAnalysis(result);
+            analysisCallback.current?.(result);
+            draw(
+              result.filteredLandmarks ?? (result.tracked ? (data.poses[0] ?? []) : []),
+              data.width,
+              data.height,
             );
-        }
+            if (modeRef.current === 'setup' || modeRef.current === 'active')
+              announce(
+                result.cue,
+                false,
+                !result.tracked ||
+                  result.cue.startsWith('Rep not counted') ||
+                  (result.score !== null && result.score < 75),
+              );
+          }
+        };
+        initDeadline.current = setTimeout(() => {
+          if (generation.current !== run || worker.current !== task) return;
+          stop();
+          setStatus('off');
+          setError(
+            'Pose tracking took too long to load. Check your connection and retry camera analysis.',
+          );
+        }, 45000);
+        task.postMessage({ type: 'init', variant: modelVariantRef.current, cpuOnly });
       };
-      initDeadline.current = setTimeout(() => {
-        if (generation.current !== run) return;
-        stop();
-        setStatus('off');
-        setError(
-          'Pose tracking took too long to load. Check your connection and retry camera analysis.',
-        );
-      }, 45000);
-      task.postMessage({ type: 'init', variant: modelVariantRef.current });
+      recoverOnCPU.current = () => launchWorker(true);
+      launchWorker();
     } catch (err) {
       if (generation.current !== run) return;
       stop();
