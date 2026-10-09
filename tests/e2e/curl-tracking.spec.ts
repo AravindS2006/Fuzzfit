@@ -191,6 +191,12 @@ test('a front-facing phone counts ten continuous right-arm depth curls with auto
         filteredFrames: current.curlOverlaySamples.filter(
           (sample) => Math.abs(sample.raw - sample.drawn) > 0.0001,
         ).length,
+        rawJitter: current.curlOverlaySamples
+          .slice(-200)
+          .reduce((sum, sample) => sum + Math.abs(sample.raw - 0.695), 0),
+        drawnJitter: current.curlOverlaySamples
+          .slice(-200)
+          .reduce((sum, sample) => sum + Math.abs(sample.drawn - 0.695), 0),
       };
     });
     expect(fixture.counts).toEqual(
@@ -198,9 +204,10 @@ test('a front-facing phone counts ten continuous right-arm depth curls with auto
     );
     expect(fixture.variants).toEqual(['heavy']);
     expect(fixture.overlayFrames).toBeGreaterThan(50);
-    // Visualization uses MediaPipe's native filtered landmarks from the analyzed
-    // frame; the rep signal has its own filter without delaying the drawing.
-    expect(fixture.filteredFrames).toBe(0);
+    // Display smoothing reduces visible camera jitter; counting uses the original
+    // measurements and still observes all ten complete movements.
+    expect(fixture.filteredFrames).toBeGreaterThan(50);
+    expect(fixture.drawnJitter).toBeLessThan(fixture.rawJitter * 0.8);
     await page.getByRole('button', { name: 'Workout settings', exact: true }).click();
     const details = page.locator('.movement-metrics');
     await expect(

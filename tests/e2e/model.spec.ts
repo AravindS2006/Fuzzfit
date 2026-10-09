@@ -1,6 +1,10 @@
 import { test, expect, chromium } from '@playwright/test';
 
-for (const failure of ['GPU initialization stall', 'slow Heavy inference'] as const) {
+for (const failure of [
+  'GPU initialization stall',
+  'slow Heavy inference',
+  'borderline Heavy inference',
+] as const) {
   test(`${failure} recovers without replacing the camera`, async () => {
     test.setTimeout(60000);
     const browser = await chromium.launch({
@@ -43,7 +47,7 @@ for (const failure of ['GPU initialization stall', 'slow Heavy inference'] as co
               )
             : source.replace(
                 'inferenceMs: performance.now() - started,',
-                "inferenceMs: variant === 'heavy' ? 250 : performance.now() - started,",
+                `inferenceMs: variant === 'heavy' ? ${failure === 'borderline Heavy inference' ? 150 : 250} : performance.now() - started,`,
               ),
       });
     });

@@ -3,6 +3,8 @@ export type PoseFixture = {
   poseAngle: number;
   poseVisible: boolean;
   poseFramesEnabled: boolean;
+  poseAnkleConfidence: number;
+  drawnPoseJoints: number;
   terminatedWorkers: number;
 };
 
@@ -14,7 +16,19 @@ export async function addPoseFixture(page: Page) {
     fixture.poseAngle = 180;
     fixture.poseVisible = true;
     fixture.poseFramesEnabled = true;
+    fixture.poseAnkleConfidence = 0.95;
+    fixture.drawnPoseJoints = 0;
     fixture.terminatedWorkers = 0;
+    const clear = CanvasRenderingContext2D.prototype.clearRect;
+    const arc = CanvasRenderingContext2D.prototype.arc;
+    CanvasRenderingContext2D.prototype.clearRect = function (...args) {
+      if (this.canvas.classList.contains('pose-canvas')) fixture.drawnPoseJoints = 0;
+      return clear.apply(this, args);
+    };
+    CanvasRenderingContext2D.prototype.arc = function (...args) {
+      if (this.canvas.classList.contains('pose-canvas')) fixture.drawnPoseJoints++;
+      return arc.apply(this, args);
+    };
     class PoseWorkerFixture {
       onmessage: ((event: { data: unknown }) => void) | null = null;
       onerror = null;
@@ -44,7 +58,7 @@ export async function addPoseFixture(page: Page) {
           points[27 + side] = {
             x: x + (Math.sin(rad) * 0.22 * data.height!) / data.width!,
             y: 0.65 - Math.cos(rad) * 0.22,
-            visibility: 0.95,
+            visibility: fixture.poseAnkleConfidence,
             presence: 0.95,
           };
         }

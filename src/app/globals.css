@@ -4994,6 +4994,16 @@ small {
   right: 14px;
   font-size: 10px;
   color: #d3e0ec;
+  padding: 0;
+  background: none;
+  pointer-events: none;
+  align-items: center;
+  gap: 8px;
+}
+.meeting-analyzer .camera-bottom > span {
+  background: #10171de8;
+  border-radius: 5px;
+  padding: 4px 7px;
 }
 .analyzer-footer {
   flex-shrink: 0;
@@ -5032,6 +5042,8 @@ small {
 .analyzer-progress > div:first-child {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
   gap: 3px;
 }
 .meeting-analyzer .analyzer-progress strong {
@@ -5572,7 +5584,7 @@ small {
   border-radius: 16px;
   pointer-events: none;
   text-align: center;
-  box-shadow: 0 8px 35px #0005;
+  box-shadow: none;
 }
 .start-countdown strong {
   color: #dcffac;
@@ -5629,7 +5641,7 @@ small {
   flex-shrink: 0;
 }
 .meeting-analyzer .analyzer-progress {
-  grid-template-columns: minmax(75px, 1fr) minmax(25px, 0.35fr) auto auto;
+  grid-template-columns: minmax(100px, max-content) minmax(25px, 1fr) auto auto;
   gap: 8px;
 }
 .meeting-analyzer .analyzer-tools {
@@ -5655,7 +5667,7 @@ small {
 .coach-video-small .meeting-analyzer .analyzer-hud,
 .coach-video-minimized .meeting-analyzer .analyzer-hud {
   top: auto;
-  bottom: 35px;
+  bottom: 48px;
   left: 10px;
   right: auto;
 }
@@ -5955,7 +5967,7 @@ small {
 .camera-view[data-mirrored='false'] .pose-canvas {
   transform: none;
 }
-.trainee-video-layout[data-coach-position='top-left']:is(.coach-video-small, .coach-video-minimized)
+.trainee-video-layout[data-coach-position$='left']:is(.coach-video-small, .coach-video-minimized)
   .tracking-badge {
   left: auto;
   right: 10px;

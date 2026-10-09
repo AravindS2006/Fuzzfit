@@ -30,6 +30,7 @@ import {
   RULE_VERSION,
 } from '@/lib/pose-engine';
 import { exercises } from '@/lib/catalog';
+import { initialPoseOverlay, updatePoseOverlay, type OverlayPoint } from '@/lib/pose-overlay';
 import { readBrowserPreference } from '@/lib/browser-preferences';
 import {
   defaultWorkoutConfig,
@@ -110,6 +111,7 @@ export function CameraAnalyzer({
     worker = useRef<Worker | null>(null),
     state = useRef(initialPoseState());
   const previewState = useRef(initialPoseState());
+  const overlayState = useRef(initialPoseOverlay());
   type Mode = 'setup' | 'active' | 'rest' | 'complete';
   type SetResult = {
     number: number;
@@ -139,7 +141,7 @@ export function CameraAnalyzer({
   modelVariantRef.current = modelVariant;
   const [modelInfo, setModelInfo] = useState({ variant: 'full', delegate: '', fps: 0 });
   const frameStats = useRef({ frames: 0, since: 0 });
-  const slowFrames = useRef(0);
+  const recentInferenceMs = useRef<number[]>([]);
   const [qualityNotice, setQualityNotice] = useState('');
   const frameRequest = useRef<number | null>(null);
   const armedRef = useRef(false);
@@ -198,6 +200,7 @@ export function CameraAnalyzer({
   streamCallback.current = onStream;
   voiceRef.current = voice;
   function stop() {
+    overlayState.current = initialPoseOverlay();
     calibrationRef.current = null;
     setCalibration(null);
     cancelStart();
@@ -418,6 +421,7 @@ export function CameraAnalyzer({
   }
   function invalidateTracking(cue: string) {
     pauseTrainingMetrics(metrics.current);
+    overlayState.current = initialPoseOverlay();
     canvas.current?.getContext('2d')?.clearRect(0, 0, canvas.current.width, canvas.current.height);
     state.current.stage = 'seek';
     state.current.candidate = '';
@@ -527,6 +531,10 @@ export function CameraAnalyzer({
   useEffect(() => {
     if (paused || localPaused) {
       pauseTrainingMetrics(metrics.current);
+      overlayState.current = initialPoseOverlay();
+      canvas.current
+        ?.getContext('2d')
+        ?.clearRect(0, 0, canvas.current.width, canvas.current.height);
       cancelStart();
       state.current.stage = 'seek';
       state.current.candidate = '';
@@ -634,7 +642,7 @@ export function CameraAnalyzer({
         inFlight.current = false;
         lastVideoTime.current = -1;
         trackingBackend.current = '';
-        slowFrames.current = 0;
+        recentInferenceMs.current = [];
         if (cpuOnly) {
           recoverOnCPU.current = null;
           invalidateTracking('Restarting tracking using CPU. Hold your starting position.');
@@ -729,13 +737,25 @@ export function CameraAnalyzer({
           if (data.type === 'result') {
             inFlight.current = false;
             const now = performance.now();
-            slowFrames.current = data.inferenceMs > 200 ? slowFrames.current + 1 : 0;
-            if (modelVariantRef.current === 'heavy' && slowFrames.current >= 5) {
+            if (Number.isFinite(data.inferenceMs) && data.inferenceMs >= 0) {
+              recentInferenceMs.current.push(data.inferenceMs);
+              if (recentInferenceMs.current.length > 5) recentInferenceMs.current.shift();
+            }
+            const meanInferenceMs =
+              recentInferenceMs.current.reduce((sum, ms) => sum + ms, 0) /
+              recentInferenceMs.current.length;
+            // Heavy at 6–9 FPS can miss short exercise endpoints despite clearer
+            // individual frames. Keep it only when it meets a 100 ms frame budget.
+            if (
+              modelVariantRef.current === 'heavy' &&
+              recentInferenceMs.current.length === 5 &&
+              meanInferenceMs > 100
+            ) {
               data.bitmap?.close();
               modelVariantRef.current = 'full';
               setModelVariant('full');
               setQualityNotice(
-                'Switched to the Full model because Heavy was too slow on this device. Your completed reps are retained.',
+                'Switched to the Full model for smoother real-time movement tracking. Your completed reps are retained.',
               );
               invalidateTracking(
                 'Hold your starting position while tracking adapts to this device.',
@@ -863,7 +883,20 @@ export function CameraAnalyzer({
             }
             setAnalysis(result);
             analysisCallback.current?.(result);
-            draw(result.tracked ? (data.poses[0] ?? []) : [], data.width, data.height, data.bitmap);
+            // Exercise readiness must not erase the entire body visualization.
+            // Scoring still uses the original, strictly gated model measurements.
+            draw(
+              updatePoseOverlay(
+                overlayState.current,
+                data.poses,
+                data.timestamp,
+                data.width,
+                data.height,
+              ),
+              data.width,
+              data.height,
+              data.bitmap,
+            );
             if (modeRef.current === 'setup' || modeRef.current === 'active')
               announce(
                 result.cue,
@@ -912,12 +945,17 @@ export function CameraAnalyzer({
       );
     }
   }
-  function draw(landmarks: Landmark[], width: number, height: number, bitmap?: ImageBitmap) {
+  function draw(
+    landmarks: (OverlayPoint | null)[],
+    width: number,
+    height: number,
+    bitmap?: ImageBitmap,
+  ) {
     try {
       const c = canvas.current;
       if (!c) return;
-      c.width = width;
-      c.height = height;
+      if (c.width !== width) c.width = width;
+      if (c.height !== height) c.height = height;
       const ctx = c.getContext('2d');
       if (!ctx) return;
       ctx.clearRect(0, 0, width, height);
@@ -928,19 +966,23 @@ export function CameraAnalyzer({
       ctx.strokeStyle = '#cbff65';
       ctx.fillStyle = '#cbff65';
       for (const [a, b] of skeletonConnections) {
-        if ((landmarks[a]?.visibility ?? 0) < 0.65 || (landmarks[b]?.visibility ?? 0) < 0.65)
-          continue;
+        const start = landmarks[a],
+          end = landmarks[b];
+        if (!start || !end) continue;
+        ctx.globalAlpha = Math.min(start.opacity, end.opacity);
         ctx.beginPath();
-        ctx.moveTo(landmarks[a].x * width, landmarks[a].y * height);
-        ctx.lineTo(landmarks[b].x * width, landmarks[b].y * height);
+        ctx.moveTo(start.x * width, start.y * height);
+        ctx.lineTo(end.x * width, end.y * height);
         ctx.stroke();
       }
       for (const p of landmarks.slice(11)) {
-        if ((p.visibility ?? 0) < 0.65) continue;
+        if (!p) continue;
+        ctx.globalAlpha = p.opacity;
         ctx.beginPath();
         ctx.arc(p.x * width, p.y * height, 4, 0, Math.PI * 2);
         ctx.fill();
       }
+      ctx.globalAlpha = 1;
     } finally {
       bitmap?.close();
     }
@@ -964,7 +1006,9 @@ export function CameraAnalyzer({
       ? 'Tracking paused. Take a moment to reset.'
       : armed
         ? countdown === null
-          ? `${movementSteps[exercise][0]} Step into camera view.`
+          ? analysis.tracked
+            ? `${movementSteps[exercise][0]} Hold this starting position.`
+            : analysis.cue
           : countdownPaused
             ? 'Countdown paused. Return to your starting position.'
             : `Starting in ${countdown}. Stay in your starting position.`
@@ -1007,7 +1051,7 @@ export function CameraAnalyzer({
               <Camera size={32} />
             </div>
             <h3>Your workout camera</h3>
-            <p>{definition.view}</p>
+            <p>{profile.cameraCue}. Step back until these joints fit in view.</p>
             <button
               className="button lime"
               disabled={sessionCamera && !onEnableCamera}
@@ -1368,7 +1412,7 @@ export function CameraAnalyzer({
                       }
                     }}
                   >
-                    <option value="heavy">Heavy · Highest model accuracy</option>
+                    <option value="heavy">Heavy · More detail on fast devices</option>
                     <option value="full">Full · Balanced accuracy and speed</option>
                     <option value="lite">Performance · Lower accuracy</option>
                   </select>

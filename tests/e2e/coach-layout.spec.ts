@@ -3,6 +3,11 @@ import AxeBuilder from '@axe-core/playwright';
 import { PrismaClient } from '@prisma/client';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
+import { addPoseFixture } from './support/pose-fixture';
+
+test.use({
+  launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] },
+});
 
 process.loadEnvFile('.env');
 
@@ -70,7 +75,10 @@ test('a trainee can resize, minimize, and restore the coach without replacing wo
       data: { action: 'classControl', id: session.id, control: 'start' },
     });
     expect(started.ok()).toBe(true);
+    await addPoseFixture(page);
     await page.goto(`/studio/${session.id}`);
+    await page.getByRole('button', { name: 'Enable camera', exact: true }).click();
+    await expect(page.getByText('Pose detected', { exact: true })).toBeVisible();
 
     const size = page.locator('select[aria-label="Coach video size"]');
     const coachTile = page.locator('.coach-stage');
@@ -104,6 +112,77 @@ test('a trainee can resize, minimize, and restore the coach without replacing wo
       expect(tile!.y).toBeGreaterThanOrEqual(camera!.y);
       expect(tile!.x + tile!.width).toBeLessThanOrEqual(camera!.x + camera!.width);
       expect(tile!.y + tile!.height).toBeLessThanOrEqual(camera!.y + camera!.height);
+    }
+
+    async function expectCameraOverlaysAligned() {
+      const camera = (await page.locator('.camera-view').boundingBox())!;
+      const video = (await page.locator('.camera-video').boundingBox())!;
+      const canvas = (await page.locator('.pose-canvas').boundingBox())!;
+      expect(video).toEqual(canvas);
+      const progress = (await page.locator('.analyzer-progress').boundingBox())!;
+      const label = (await page
+        .locator('.analyzer-progress > div:first-child > strong')
+        .boundingBox())!;
+      expect(Math.abs(progress.x - label.x)).toBeLessThanOrEqual(1);
+      const overlays = [
+        '.tracking-badge',
+        '.analyzer-hud',
+        '.camera-bottom > span:first-child',
+        '.camera-bottom > span:last-child',
+        '.coach-stage',
+      ];
+      const boxes: { selector: string; x: number; y: number; width: number; height: number }[] = [];
+      for (const selector of overlays) {
+        const node = page.locator(selector).first();
+        if (!(await node.isVisible())) continue;
+        const box = (await node.boundingBox())!;
+        if (
+          selector === '.coach-stage' &&
+          !(await page
+            .locator('.trainee-video-layout')
+            .evaluate(
+              (node) =>
+                node.classList.contains('coach-video-small') ||
+                node.classList.contains('coach-video-minimized'),
+            ))
+        )
+          continue;
+        expect(box.x, selector).toBeGreaterThanOrEqual(camera.x);
+        expect(box.y, selector).toBeGreaterThanOrEqual(camera.y);
+        expect(box.x + box.width, selector).toBeLessThanOrEqual(camera.x + camera.width);
+        expect(box.y + box.height, selector).toBeLessThanOrEqual(camera.y + camera.height);
+        boxes.push({ selector, ...box });
+      }
+      for (let i = 0; i < boxes.length; i++)
+        for (let j = i + 1; j < boxes.length; j++) {
+          const a = boxes[i],
+            b = boxes[j];
+          const overlap =
+            Math.min(a.x + a.width, b.x + b.width) > Math.max(a.x, b.x) &&
+            Math.min(a.y + a.height, b.y + b.height) > Math.max(a.y, b.y);
+          expect(
+            overlap,
+            `${a.selector} ${JSON.stringify(a)} overlaps ${b.selector} ${JSON.stringify(b)} at ${JSON.stringify(page.viewportSize())} ${await page.locator('.trainee-video-layout').getAttribute('class')} ${await page.locator('.trainee-video-layout').getAttribute('data-coach-position')}`,
+          ).toBe(false);
+        }
+      for (const selector of [
+        '.camera-view',
+        '.pose-canvas',
+        '.camera-bottom',
+        '.analyzer-topbar',
+        '.coach-stage',
+        '.coach-video-toolbar',
+        '.meeting-tile-name',
+      ]) {
+        const styles = await page
+          .locator(selector)
+          .first()
+          .evaluate((node) => ({
+            image: getComputedStyle(node).backgroundImage,
+            shadow: getComputedStyle(node).boxShadow,
+          }));
+        expect(styles, selector).toEqual({ image: 'none', shadow: 'none' });
+      }
     }
 
     for (const viewport of [
@@ -141,6 +220,7 @@ test('a trainee can resize, minimize, and restore the coach without replacing wo
               position,
             );
             await expectInsideCamera();
+            await expectCameraOverlaysAligned();
             await expect(analyzer).toHaveAttribute('data-layout-fixture', fixtureId);
           }
         }
@@ -150,6 +230,13 @@ test('a trainee can resize, minimize, and restore the coach without replacing wo
         expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1);
         await expect(analyzer).toHaveAttribute('data-layout-fixture', fixtureId);
         await expect(feed).toHaveAttribute('data-layout-fixture', fixtureId);
+        await expectCameraOverlaysAligned();
+        if (viewport.width === 1440 || (viewport.width === 3840 && value === 'small')) {
+          await mkdir('docs/screenshots', { recursive: true });
+          await page.screenshot({
+            path: `docs/screenshots/trainee-${viewport.width}-${value}.png`,
+          });
+        }
         expect(
           await page.evaluate(
             () =>
