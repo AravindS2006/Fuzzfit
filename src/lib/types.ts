@@ -1,7 +1,13 @@
 import type { ProfileExerciseId } from './exercise-profiles';
 export type ExerciseId = ProfileExerciseId;
 export type Person = { id: string; name: string; email: string; role: string; goal: string };
-export type Block = { exercise: ExerciseId; sets: number; reps: number; rest: number };
+export type Block = {
+  exercise: ExerciseId;
+  sets: number;
+  reps: number;
+  rest: number;
+  loadKg?: number;
+};
 export type Plan = { id: string; name: string; description: string; blocks: Block[] };
 export type MetricView = {
   exercise: string;
@@ -12,9 +18,56 @@ export type MetricView = {
   confidence: number;
   phase: string;
   cue: string;
+  quality?: number | null;
+  rangeDegrees?: number | null;
+  repSeconds?: number | null;
+  trackingCoverage?: number | null;
+  rejectedReps?: number;
   updatedAt: string;
 };
-export type ClientView = Person & { joinedAt: string };
+export type ClientView = Person & { joinedAt: string; coachNote?: string };
+export type WorkoutSetRecord = {
+  clientId: string;
+  classId: string | null;
+  revision: number;
+  exercise: ExerciseId;
+  ruleVersion: string;
+  setNumber: number;
+  target: number;
+  reps: number;
+  holdMs: number;
+  activeMs: number;
+  trackedMs: number;
+  formScore: number | null;
+  qualityScore: number | null;
+  rangeDegrees: number | null;
+  repSeconds: number | null;
+  confidence: number | null;
+  rejectedReps: number;
+  loadKg: number | null;
+  completed: boolean;
+  startedAt: string;
+  endedAt: string;
+};
+export type WorkoutSetView = WorkoutSetRecord & {
+  id: string;
+  userId: string;
+  userName: string;
+  classTitle: string | null;
+};
+export type CheckInView = {
+  id: string;
+  userId: string;
+  userName: string;
+  energy: number;
+  soreness: number;
+  effort: number | null;
+  sleepHours: number | null;
+  bodyweightKg: number | null;
+  note: string;
+  createdAt: string;
+};
+export type AssignmentView = { userId: string; planId: string; assignedAt: string };
 export type ClassView = {
   id: string;
   title: string;
@@ -36,7 +89,12 @@ export type ClassView = {
     name: string;
     helpRequested: boolean;
     metric: MetricView | null;
-    summary: { totalReps: number; trackedSamples: number; scoreTotal: number } | null;
+    summary: {
+      totalReps: number;
+      totalHoldSeconds?: number;
+      trackedSamples: number;
+      scoreTotal: number;
+    } | null;
   }[];
 };
 export type WorkspaceData = {
@@ -48,6 +106,9 @@ export type WorkspaceData = {
   billing: string;
   services: { video: boolean; billing: boolean; email: boolean };
   demo: boolean;
+  workoutSets: WorkoutSetView[];
+  checkIns: CheckInView[];
+  assignments: AssignmentView[];
 };
 export type MessageView = {
   id: string;

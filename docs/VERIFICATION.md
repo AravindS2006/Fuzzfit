@@ -1,56 +1,44 @@
-# Verification and release status
+# Verification and release evidence
 
-Prepared 6 October 2026. This report distinguishes locally tested behavior from externally dependent release gates. The application is deployed at `fuzzfit.vercel.app` for operator testing with Vercel/PostgreSQL and LiveKit Cloud integration code. Public login and database health respond successfully; full external service, real-device, and public-launch acceptance remain pending.
+Updated 9 October 2026. Fuzzfit is deployed for operator testing at [fuzzfit.vercel.app](https://fuzzfit.vercel.app). This report records automated evidence and its limits; the GitHub workflow and Vercel deployment identify the exact released commit.
 
-## Local checks
+## Professional coaching phase
 
-| Check | Result and scope |
+The [phase 2 plan](PHASE_2_PLAN.md) adds durable workout-set history, measured progress, client assignments, private coach notes, trainee check-ins, account-scoped save retries, and consistent meeting layout. The twelve supported exercises and profile-v3 rep engine remain available. Domain-based email and paid billing stay deferred as requested.
+
+| Check | Evidence |
 | --- | --- |
-| Optimized build | Next.js build, TypeScript compilation, route generation, pinned model/WASM preparation |
-| Detector and input tests | 20 passing Vitest cases: squat, push-up, curl, plank, confidence/geometry gates, rep phase stability, aspect correction, tracking loss, pause, hold timing, invalid inputs |
-| Production configuration and email policy tests | 29 passing cases: remote PostgreSQL URL requirements, secure/exact origins, missing services, independent strong secrets, template/write-only placeholders, sender validation, partial billing, secret-safe errors, explicit email deferral, testing signup, and restored production verification. Total: 49 unit tests |
-| Deferred-email authentication | `npm run test:email-disabled` uses a unique disposable SQLite database and separate server: rejects signup/reset requests, creates no account/reset token, rejects unverified sign-in, permits an existing verified account/session, and checks the login page hides unavailable actions |
-| Testing signup and both roles | 28 passing checks: `npm run test:signup` runs the built app with `VERCEL=1` and explicit testing mode on a disposable SQLite database: coach/trainee signup and valid sessions, retained unverified state, one-time role setup, secret invite acceptance, class scheduling/control, personal cue delivery, unavailable recovery, visible signup, and rejection of old testing sessions when verification is restored |
-| API integration | 39 passing checks with actual database-backed auth sessions: onboarding, email-bound invites, plan/class ownership, enrollment, privacy scopes, lifecycle, monotonic metrics, stale revisions, origin rejection, export, health, protected cleanup |
-| Browser journeys | 7 passing Edge/Playwright tests: sample navigation/edit/schedule/messages/control, mobile layout, permission denial, actual worker/model initialization with simulated camera, real coach signup/plan persistence, invited trainee signup/onboarding/enrollment/help/private-cue delivery/completion in separate contexts, and disabled interaction while client scripts are deliberately delayed |
-| Accessibility | 17 scanned page/dialog/populated studio/mobile states plus authenticated trainee onboarding and private-cue views; zero automated WCAG-tagged axe violations after fixing contrast, dialog naming, and keyboard-safe setup. Public-state report: `accessibility-report.json` |
-| Live Vercel/Neon account flow | 20 passing checks against the canonical deployed app: real signup for coach and trainee, unverified email state, valid sessions, role setup, secret invitation acceptance, client visibility, session scheduling, trainee visibility, and repeat password sign-in. Temporary accounts and related studio/session records were removed with cleanup scoped to their exact generated addresses |
-| PostgreSQL schema | Equivalent generated schema validates; committed migration `20261006000000_init` applied to the new Neon Free production database. Basic connectivity and the account flow above pass. Full metrics/lifecycle/video/concurrency and load tests on PostgreSQL remain pending |
-| Dependency audit | npm audit reports zero known vulnerabilities in the installed graph at verification time |
-| Source consistency | Prettier check passes; generated third-party runtime files excluded |
+| Unit suite | 183 passing cases across pose trajectories, confidence/source/limb stability, twelve exercise profiles, countdown, hold timing, observed metrics, weighted progress, CSV safety, failed-save ownership/retries, GPU runtime recovery, auth/email policy, and video grants |
+| API integration | 108 passing checks against real local auth and SQLite: roles, invitation/class/plan ownership, consent, lifecycle, private messages, origin guards, monotonic summaries, persisted sets, immutable idempotent retries, intended-account protection, assignments, private notes, check-ins, hold totals, and personal export |
+| Browser regressions | 21 Edge/Playwright cases verified; changed flows rerun after refinements. Includes ten continuous front-facing depth curls, automatic limb selection, guided sets, countdown/dropout/stale-camera behavior, auth flows, drawer dismissal, eight-trainee galleries, all coach sizes/corners, mobile/landscape/4K containment, and persistent progress after a failed save and reload |
+| Full inference runtime | The real pinned Full MediaPipe model loads with the available backend and with deliberately unavailable GPU initialization. A separate worker fault test covers a lost GPU runtime, one CPU recovery, bitmap disposal, and terminal CPU failure |
+| Accessibility | 20 public/sample page, dialog, populated meeting, and mobile states have zero automated axe violations. Authenticated trainee, floating coach, countdown, and populated progress are also scanned in browser tests |
+| Build and source | Optimized Next.js build, TypeScript, asset checksums, Prettier, and diff consistency checked. No new dependency is required; npm audit reports zero known vulnerabilities at this check |
+| Database migration rehearsal | Both providers have additive committed migrations. SQLite applies locally. The PostgreSQL SQL was rehearsed in a temporary isolated schema on the existing Neon database with representative legacy records: totals/defaults preserved, new records accepted, uniqueness and deletion cascades verified, test schema removed |
+| GitHub CI | Runs setup, typecheck, formatting, unit tests, dependency audit, optimized build, API tests, all browser tests, accessibility, and both deferred-email auth modes on Windows/Edge with Node 22.22 |
 
-The integration test identities use `example.test` and are deleted after execution. Browser account journeys simulate independent clients with reserved documentation IPs in the local proxy header; the application's signup rate limit remains enabled. SQLite is the tested local database. Edge is the tested browser. The workstation uses Node 22.14; use Node 22.22+ for release because a transitive package declares that minimum.
+Test accounts use generated `example.test` addresses and are removed after verification. Local integration uses SQLite and simulated camera feeds. Changing layouts preserves existing media nodes and the analysis worker. Screenshots/traces are generated artifacts excluded from Git.
 
-Camera initialization was tested with MediaPipe's real pinned Lite model and local WASM. The simulated feed has no body, so the correct outcome is “Position camera,” no score, and camera cleanup on stop. This verifies execution and lifecycle, **not** pose accuracy, body-part localization accuracy, cue quality, or rep-count performance on real exercises. Unit tests use synthetic landmark trajectories and cannot substitute for annotated exercise videos.
+## Measured data and privacy
 
-Screenshots of dashboard, practice, plans, and 390px mobile and the accessibility report are generated local artifacts, excluded from Git. Recreate them with `node scripts/capture-preview.mjs` and `npm run test:a11y` against the local server. The product's sample workspace is explicitly illustrative. Real camera practice is available there; no sample identity can access protected records.
+Observed time accumulates only across nearby camera frames during active sets. Pauses, hidden tabs, and large frame gaps do not add training or hold time. Reliable tracked time weights observed form; completed reps weight quality, range, and tempo. A rejection is counted once per rejected cycle. Missing measurements stay null. Reported load volume is entered load multiplied by counted reps; it is not a camera measurement of force or work.
 
-## Implemented controls worth reviewing
+A saved set has a client-generated idempotency key and frozen exercise/revision metadata. Duplicate retries return the same immutable row. Practice saving is opt-in and captured at set start. Live saves require class access and consent. An interrupted set retains its measured work. Failed saves are partitioned by account in device storage and sent with an intended-account check. One rejected queued record does not block later records. Uploads must arrive within 30 days; class records must fit their class timeline, with a short polling/clock tolerance at completion.
 
-- Authentication and every domain API enforce membership/ownership; roles are one-time, server-side choices.
-- Streaming JSON reads have a 16KB cap; mutations check origin, content type, schema, and user request limits.
-- LiveKit tokens are short-lived and room-scoped, with camera/microphone-only publishing and no administrative/data-publishing grants.
-- Local inference rejects missing/low-confidence/ambiguous poses; stale estimates disappear, exercise revisions gate summaries, and invalidated rep phases cannot count.
-- Workers and owned tracks close on stop/unmount. Shared video and local inference have separate labelled controls. Group sharing is explicit before join.
-- Metrics/invite/onboarding transactions use serializable isolation; lifecycle controls use status/revision guards. Summary polling backs off on failures.
-- Private cues and summaries are scoped; frames are never persisted. Signed Stripe webhooks use durable event IDs and current subscription reconciliation.
+Coaches see their own studio's clients and shared summaries. Trainees see their own analytics, check-ins, and assignments. Private coach notes are omitted from trainee APIs and personal exports. Set/history/check-in deletion cascades with account deletion. The existing retention job removes latest camera metrics after seven days and messages after 90 days; saved history and notes follow the operator's published deletion/retention policy. Raw frames and landmarks are not stored.
 
-These controls and passing checks do not establish independent security or accessibility certification. CSP currently permits inline framework bootstrap scripts; nonce-based hardening remains an operator engineering decision.
+## Production verification procedure
 
-## Required service checks before deployment approval
+Apply the tested additive PostgreSQL migration using the direct connection, then verify new tables/columns without printing credentials. Push only source, tests, documentation, and migrations. Require successful CI for the exact commit, a Ready staged production build for that commit, and canonical-domain assignment to that deployment. Rerun controlled account/progress and LiveKit checks after promotion; remove their exact temporary accounts and rooms.
 
-1. **PostgreSQL:** verify remaining domain flows on an isolated test database with pooled runtime/direct migration URLs, exercise concurrent invites/metrics/lifecycle controls, load-test eight trainees, measure pool saturation, handle serialization conflicts, rehearse backup restoration. Migration, basic connectivity, and the live signup/role/invite/scheduling flow passed on the new Neon database; these broader gates remain pending.
-2. **LiveKit Cloud:** configure a project with automatic room creation disabled and connect coach/trainee physical devices on independent networks. Test explicit room creation/capacity, media/autoplay, microphone/camera toggles, mobile browsers, TURN, reconnect, degraded bandwidth, revocation and cached/refreshed-token rejoin after completion, terminal room cleanup/retry, and group-consent expectations. No actual multi-device room was connected here.
-3. **Email:** configure verified Resend sender/domain; verify production signup confirmation, reset delivery, expired links, and resend/rate behavior. No live email was sent.
-4. **Stripe (optional):** test Checkout, portal, duplicate/concurrent/out-of-order signed events, cancellation, failed renewal, customer mapping, and reconciliation before enabling charges. Define paid entitlements and cancellation/refund policies; class access is not currently paywalled.
-5. **Vercel:** the Fuzzfit project is created and linked, with Node 22.x, Singapore functions, staged domain assignment, origin/provider settings, and private auth/cleanup secrets. Neon is connected only to Production. Finish video/mail configuration, run the production guard with actual secrets, deploy a preview to isolated test services, verify HTTPS/camera/worker/headers, configure logs, alert ownership, budget limits, retention cron, and rollback. No Fuzzfit application deployment was uploaded or promoted during this session.
+The previous production release already passed a real LiveKit Cloud room check with a coach and two simultaneous trainees, camera reception, microphone publishing/muting, private cues/help, stable resizing/minimizing, screen and tab-audio sharing, class completion, and room cleanup. These checks are repeated for this release. Cloud transport checks use real RTC connections with simulated camera/microphone sources; they are not physical-device tests.
 
-## Required product and human validation before public launch
+## Remaining validation boundaries
 
-Evaluate real exercise videos rated by qualified coaches across representative body types, clothing, lighting, camera positions, mobility, and supported devices. Publish measured cue precision, rep-count errors, rejected tracking, subgroup performance, and supported exercise variations. Until that evidence exists, scores remain limited `geometry-v1` heuristic estimates; a high score cannot mean a workout is perfect or safe.
+Automated landmarks verify the rep algorithm and UI, not accuracy on a person's actual phone camera. Annotated trials with qualified coaches across body types, movement variations, clothing, camera views, lighting, device performance, and networks are still needed to quantify rep-count and cue error. The one-person pose model does not establish crowded-view correctness. A camera score cannot certify safe or perfect technique or detect pain.
 
-Complete keyboard/screen-reader/manual accessibility testing, independent threat modeling/pentesting, legal/privacy/terms review for launch markets, vendor agreements, deletion and retention policies, coach verification/abuse response, and restore/incident rehearsal. Automated account deletion, an operator console, paid entitlements, recurring booking, push reminders, reviewed exercise videos, and deeper personalized programming are documented future milestones, not shipped features.
+Representative Safari/Android/iOS/TV hardware, thermal behavior, TURN/reconnect under impaired networks, peak PostgreSQL/RTC load, backup restoration, and independent manual accessibility/security review remain separate acceptance work. Public email recovery requires the client's verified sending domain. Paid entitlements, recordings, wearable/nutrition integrations, and larger classes are not part of this release.
 
-## Repeat locally
+## Reproduce
 
-Run `npm run setup`, `npm test`, `npm run format:check`, and `npm run build`. Start the app with `npm run start`, then run `npm run test:api`, `npm run test:e2e`, and `npm run test:a11y` against `http://localhost:3000`. Stop the server before Prisma generation/build on Windows to avoid the locked query-engine DLL. Use a dedicated local database, not customer data.
+Run `npm run setup`, `npm run typecheck`, `npm test`, `npm run format:check`, and `npm run build`. Start with `npm run start`, then run `npm run test:api`, `npm run test:e2e`, and `npm run test:a11y`. Run `npm run test:email-disabled` and `npm run test:signup` for isolated auth modes. On Windows, stop the server before Prisma generation/build to release its native DLL. Use a dedicated local database.

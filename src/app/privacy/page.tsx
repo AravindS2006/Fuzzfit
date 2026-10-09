@@ -34,6 +34,20 @@ export default function PrivacyPage() {
         and you can view your summaries. Other trainees cannot access your individual analytics
         through the app’s APIs. Scores are heuristic estimates, not proof of safe or perfect form.
       </p>
+      <p>
+        Completed or interrupted sets can retain observed training and hold time, range, tempo, rep
+        quality, tracking coverage, rejected cycles, targets, and exercise rule version. Signed-in
+        practice saves these summaries only when you enable saved history; they then become
+        available to your coach. Failed saves are queued on this device for retry within 30 days.
+        Raw camera frames and body landmarks are not stored with your history.
+      </p>
+      <h2>Coaching plans and check-ins</h2>
+      <p>
+        Your coach can assign workout plans and keep private coaching notes. Trainees may choose to
+        share energy, soreness, workout effort, sleep, bodyweight, and a short note. These are
+        self-reported values. Your check-ins are available to you and your coach; private coach
+        notes are visible only to the coach.
+      </p>
       <h2>Messages and coach feedback</h2>
       <p>
         Session messages are shared with the group. Cues addressed to one trainee are private to
@@ -44,9 +58,10 @@ export default function PrivacyPage() {
       <p>
         The included retention job removes latest camera summaries after 7 days and session messages
         after 90 days. Aggregated workout history remains until the studio operator processes a
-        deletion request or sets a shorter retention policy. You can download your own profile and
-        workout history in Settings. The operator must publish a working contact and data deletion
-        process before launch.
+        deletion request or sets a shorter retention policy. Saved set history, assignments, and
+        check-ins follow this same policy. You can download your own profile and workout history in
+        Settings. The operator must publish a working contact and data deletion process before
+        launch.
       </p>
       <h2>Camera limitations and wellbeing</h2>
       <ul>

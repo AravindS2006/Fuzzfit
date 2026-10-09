@@ -13,7 +13,14 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
-import type { Block, ExerciseId } from '@/lib/types';
+import type { Block, ExerciseId, WorkoutSetRecord } from '@/lib/types';
+import {
+  initialTrainingMetrics,
+  observeTrainingMetrics,
+  pauseTrainingMetrics,
+  trainingMetricsSummary,
+} from '@/lib/training-metrics';
+import { saveWorkoutSet, retryWorkoutSets, pendingWorkoutSets } from '@/lib/workout-save';
 import {
   analyzePose,
   initialPoseState,
@@ -68,6 +75,11 @@ export function CameraAnalyzer({
   block,
   sessionCamera = false,
   onEnableCamera,
+  saveForUser,
+  historyUserId = saveForUser,
+  classId = null,
+  mirror = true,
+  onCameraHeight,
 }: {
   exercise: ExerciseId;
   paused?: boolean;
@@ -80,7 +92,13 @@ export function CameraAnalyzer({
   block?: Block;
   sessionCamera?: boolean;
   onEnableCamera?: () => void;
+  saveForUser?: string;
+  historyUserId?: string;
+  classId?: string | null;
+  mirror?: boolean;
+  onCameraHeight?: (height: number) => void;
 }) {
+  const cameraView = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null),
     canvas = useRef<HTMLCanvasElement>(null),
     worker = useRef<Worker | null>(null),
@@ -93,6 +111,8 @@ export function CameraAnalyzer({
     score: number | null;
     range: number;
     tempo: number;
+    quality: number | null;
+    record?: WorkoutSetRecord;
   };
   const [config, setConfig] = useState(() => defaultWorkoutConfig(exercise, block));
   const [mode, setMode] = useState<Mode>('setup');
@@ -124,6 +144,23 @@ export function CameraAnalyzer({
   const baseline = useRef({ reps: initialReps, holdMs: initialHoldSeconds * 1000 });
   const completedRef = useRef<SetResult[]>([]);
   const samples = useRef({ count: 0, total: 0 });
+  const metrics = useRef(initialTrainingMetrics(initialReps));
+  const setStartedAt = useRef('');
+  const lastObservedAt = useRef('');
+  const activeSet = useRef<{
+    clientId: string;
+    exercise: ExerciseId;
+    revision: number;
+    classId: string | null;
+    owner?: string;
+  } | null>(null);
+  const saveOwner = useRef(saveForUser);
+  const retryOwner = useRef(historyUserId);
+  retryOwner.current = historyUserId;
+  saveOwner.current = saveForUser;
+  const [saveMessage, setSaveMessage] = useState('');
+  const [saveFailed, setSaveFailed] = useState(false);
+  const [saving, setSaving] = useState(false);
   const soundContext = useRef<AudioContext | null>(null);
   const lastVideoTime = useRef(-1);
   configRef.current = config;
@@ -194,12 +231,55 @@ export function CameraAnalyzer({
     oscillator.start();
     oscillator.stop(context.currentTime + 0.1);
   }
+  function recordSet() {
+    const active = activeSet.current;
+    if (!active) return null;
+    activeSet.current = null;
+    const amount = Math.floor(
+      workoutSetProgress(
+        active.exercise,
+        tally.current.reps,
+        tally.current.holdMs,
+        baseline.current,
+      ),
+    );
+    const measured = trainingMetricsSummary(metrics.current);
+    const record: WorkoutSetRecord = {
+      clientId: active.clientId,
+      classId: active.classId,
+      revision: active.revision,
+      exercise: active.exercise,
+      ruleVersion: RULE_VERSION,
+      setNumber: completedRef.current.length + 1,
+      target: configRef.current.target,
+      reps: Math.max(0, tally.current.reps - baseline.current.reps),
+      holdMs: Math.max(0, Math.floor(tally.current.holdMs - baseline.current.holdMs)),
+      activeMs: measured.activeMs,
+      trackedMs: measured.trackedMs,
+      formScore: measured.formScore,
+      qualityScore: measured.qualityScore,
+      rangeDegrees: measured.rangeDegrees,
+      repSeconds: measured.repSeconds,
+      confidence: measured.confidence,
+      rejectedReps: measured.rejectedReps,
+      loadKg: configRef.current.loadKg,
+      completed: amount >= configRef.current.target,
+      startedAt: setStartedAt.current,
+      endedAt: lastObservedAt.current || setStartedAt.current,
+    };
+    return {
+      record,
+      amount,
+      owner: saveOwner.current === active.owner ? active.owner : undefined,
+      measured,
+    };
+  }
   function finishSet(result: Analysis) {
     if (modeRef.current !== 'active') return;
+    const snapshot = recordSet();
+    if (!snapshot) return;
+    const { record, amount, owner, measured } = snapshot;
     setShowGo(false);
-    const amount = Math.floor(
-      workoutSetProgress(exerciseRef.current, result.reps, tally.current.holdMs, baseline.current),
-    );
     const entry = {
       number: completedRef.current.length + 1,
       amount,
@@ -208,9 +288,26 @@ export function CameraAnalyzer({
         : null,
       range: result.rangeDegrees ?? 0,
       tempo: result.lastRepSeconds ?? 0,
+      quality: measured.qualityScore,
+      record: owner ? record : undefined,
     };
     completedRef.current = [...completedRef.current, entry];
     setCompletedSets(completedRef.current);
+    if (owner) {
+      setSaveMessage('Saving workout…');
+      void saveWorkoutSet(owner, record)
+        .then(() => {
+          const pending = pendingWorkoutSets(owner) > 0;
+          setSaveFailed(pending);
+          setSaveMessage(
+            pending ? 'Another workout save is pending. Retry when connected.' : 'Workout saved',
+          );
+        })
+        .catch(() => {
+          setSaveFailed(true);
+          setSaveMessage('Workout save pending. Retry when connected.');
+        });
+    }
     const nextMode = completedRef.current.length >= configRef.current.sets ? 'complete' : 'rest';
     modeRef.current = nextMode;
     setMode(nextMode);
@@ -266,6 +363,16 @@ export function CameraAnalyzer({
   function activateSet(timestamp: number) {
     if (!armedRef.current || pausedRef.current || document.hidden) return;
     baseline.current = { reps: tally.current.reps, holdMs: tally.current.holdMs };
+    metrics.current = initialTrainingMetrics(tally.current.reps, timestamp);
+    setStartedAt.current = new Date().toISOString();
+    lastObservedAt.current = setStartedAt.current;
+    activeSet.current = {
+      clientId: crypto.randomUUID(),
+      exercise: exerciseRef.current,
+      revision,
+      classId,
+      owner: saveOwner.current,
+    };
     const preview = previewState.current;
     // The countdown already observed a stable starting pose. Preserve that readiness
     // so the first movement after Go is counted, without importing rehearsal reps.
@@ -292,6 +399,7 @@ export function CameraAnalyzer({
     announce('Go. Your set has started. Move under control.', true);
   }
   function invalidateTracking(cue: string) {
+    pauseTrainingMetrics(metrics.current);
     canvas.current?.getContext('2d')?.clearRect(0, 0, canvas.current.width, canvas.current.height);
     state.current.stage = 'seek';
     state.current.candidate = '';
@@ -312,14 +420,39 @@ export function CameraAnalyzer({
     setAnalysis(unavailable);
     analysisCallback.current?.(unavailable);
   }
+  async function retrySaving() {
+    if (!retryOwner.current || saving) return;
+    setSaving(true);
+    try {
+      await retryWorkoutSets(retryOwner.current);
+      for (const entry of completedRef.current)
+        if (entry.record) await saveWorkoutSet(retryOwner.current, entry.record);
+      setSaveFailed(false);
+      setSaveMessage('Workout saved');
+    } catch {
+      setSaveFailed(true);
+      setSaveMessage('Workout save pending. Check your connection and retry.');
+    } finally {
+      setSaving(false);
+    }
+  }
   useEffect(
     () => () => {
+      const unfinished = recordSet();
+      if (unfinished?.owner && unfinished.record.activeMs > 0)
+        void saveWorkoutSet(unfinished.owner, unfinished.record).catch(() => {});
       stop();
       void soundContext.current?.close();
     },
     [],
   ); // All device and worker resources are owned by this component.
   useEffect(() => {
+    const unfinished = recordSet();
+    if (unfinished?.owner && unfinished.record.activeMs > 0)
+      void saveWorkoutSet(unfinished.owner, unfinished.record).catch(() => {
+        setSaveFailed(true);
+        setSaveMessage('Workout save pending. Retry when connected.');
+      });
     tally.current = { reps: initialReps, holdMs: initialHoldSeconds * 1000 };
     state.current = { ...initialPoseState(), ...tally.current };
     previewState.current = initialPoseState();
@@ -337,11 +470,35 @@ export function CameraAnalyzer({
     setConfig(
       normalizeWorkoutConfig(exercise, {
         ...saved,
-        ...(block ? { sets: block.sets, target: block.reps, rest: block.rest } : {}),
+        ...(block
+          ? { sets: block.sets, target: block.reps, rest: block.rest, loadKg: block.loadKg ?? null }
+          : {}),
       }),
     );
     setAnalysis({ ...empty, reps: initialReps, holdSeconds: initialHoldSeconds });
-  }, [exercise, revision]);
+  }, [exercise, revision, block?.sets, block?.reps, block?.rest, block?.loadKg]);
+  useEffect(() => {
+    const onPageHide = () => {
+      const unfinished = recordSet();
+      if (unfinished?.owner && unfinished.record.activeMs > 0)
+        void saveWorkoutSet(unfinished.owner, unfinished.record).catch(() => {});
+      modeRef.current = 'setup';
+      setMode('setup');
+      stop();
+      setStatus('off');
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, []);
+  useEffect(() => {
+    const view = cameraView.current;
+    if (!view || !onCameraHeight) return;
+    const update = () => onCameraHeight(view.getBoundingClientRect().height);
+    const observer = new ResizeObserver(update);
+    observer.observe(view);
+    update();
+    return () => observer.disconnect();
+  }, [onCameraHeight]);
   useEffect(() => {
     if (mode !== 'rest') return;
     const tick = () => setRestLeft(Math.max(0, Math.ceil((restUntil - Date.now()) / 1000)));
@@ -351,6 +508,7 @@ export function CameraAnalyzer({
   }, [mode, restUntil]);
   useEffect(() => {
     if (paused || localPaused) {
+      pauseTrainingMetrics(metrics.current);
       cancelStart();
       state.current.stage = 'seek';
       state.current.candidate = '';
@@ -359,6 +517,12 @@ export function CameraAnalyzer({
       window.speechSynthesis?.cancel();
     }
   }, [paused, localPaused]);
+  useEffect(() => {
+    if (historyUserId && pendingWorkoutSets(historyUserId)) {
+      setSaveFailed(true);
+      setSaveMessage('Unsaved workout summaries are available. Retry saving.');
+    }
+  }, [historyUserId]);
   useEffect(() => {
     if (!showGo) return;
     const timer = setTimeout(() => setShowGo(false), 1000);
@@ -446,6 +610,11 @@ export function CameraAnalyzer({
       };
       task.onmessage = ({ data }) => {
         if (generation.current !== run) return;
+        if (data.type === 'backend') {
+          setModelInfo((previous) => ({ ...previous, delegate: data.delegate }));
+          invalidateTracking('Tracking recovered using CPU. Return to your starting position.');
+          return;
+        }
         if (data.type === 'error') {
           stop();
           setStatus('off');
@@ -568,6 +737,16 @@ export function CameraAnalyzer({
             if (ready && startClock.current.remainingMs === 0) activateSet(data.timestamp);
           }
           if (activeSet) {
+            observeTrainingMetrics(
+              metrics.current,
+              result,
+              data.timestamp,
+              state.current.feedbackUntil,
+            );
+            lastObservedAt.current = new Date().toISOString();
+            const measured = trainingMetricsSummary(metrics.current);
+            result.trackingCoverage = measured.trackingCoverage;
+            result.rejectedReps = measured.rejectedReps;
             if (result.reps > tally.current.reps) signalRep();
             tally.current = { reps: state.current.reps, holdMs: state.current.holdMs };
             if (result.score !== null) {
@@ -707,7 +886,7 @@ export function CameraAnalyzer({
   const currentSet = Math.min(completedSets.length + 1, config.sets);
   return (
     <div className="camera-analyzer meeting-analyzer">
-      <div className="camera-view">
+      <div className="camera-view" ref={cameraView} data-mirrored={mirror}>
         <video ref={video} muted playsInline className="camera-video" />
         <canvas ref={canvas} className="pose-canvas" aria-hidden="true" />
         <div className="analyzer-topbar">
@@ -822,6 +1001,16 @@ export function CameraAnalyzer({
         )}
       </div>
       <div className="analyzer-footer">
+        {saveMessage && (
+          <div className={`workout-save-status ${saveFailed ? 'save-pending' : ''}`} role="status">
+            <span>{saveMessage}</span>
+            {saveFailed && (
+              <button disabled={saving} onClick={() => void retrySaving()}>
+                {saving ? 'Saving…' : 'Retry saving'}
+              </button>
+            )}
+          </div>
+        )}
         {error && (
           <p className="inline-error" role="alert">
             {error}
@@ -1022,6 +1211,22 @@ export function CameraAnalyzer({
                     onChange={(e) => updateConfig({ rest: Number(e.target.value) })}
                   />
                 </label>
+                <label>
+                  External load (kg, optional)
+                  <input
+                    type="number"
+                    min={0}
+                    max={500}
+                    step={0.5}
+                    value={config.loadKg ?? ''}
+                    disabled={mode === 'active'}
+                    onChange={(event) =>
+                      updateConfig({
+                        loadKg: event.target.value === '' ? null : Number(event.target.value),
+                      })
+                    }
+                  />
+                </label>
               </div>
               <details className="tracking-settings">
                 <summary>Adjust tracking with your coach</summary>
@@ -1055,8 +1260,9 @@ export function CameraAnalyzer({
                 </label>
                 {status === 'ready' && (
                   <p className="microcopy">
-                    Tracking: {modelInfo.fps} analyzed frames/sec. If tracking feels slow, use
-                    Accurate or Performance mode.
+                    Tracking: {modelInfo.variant} · {modelInfo.delegate || 'device'} ·{' '}
+                    {modelInfo.fps} analyzed frames/sec. If tracking feels slow, use Accurate or
+                    Performance mode.
                   </p>
                 )}
                 <div className="workout-fields">
@@ -1166,6 +1372,25 @@ export function CameraAnalyzer({
                             : 'acquiring')}
                     </b>
                   </span>
+                  <span>
+                    Tracking coverage:{' '}
+                    <b>
+                      {analysis.trackingCoverage == null ? '—' : `${analysis.trackingCoverage}%`}
+                    </b>
+                  </span>
+                  <span>
+                    Geometry:{' '}
+                    <b>
+                      {analysis.geometrySource === '3d'
+                        ? 'Estimated 3D'
+                        : analysis.geometrySource === '2d'
+                          ? 'Camera 2D'
+                          : 'Acquiring'}
+                    </b>
+                  </span>
+                  <span>
+                    Rejected cycles: <b>{analysis.rejectedReps ?? 0}</b>
+                  </span>
                   {analysis.rejectionReason && (
                     <span role="status">{analysis.rejectionReason}</span>
                   )}
@@ -1187,8 +1412,9 @@ export function CameraAnalyzer({
                   <CheckCircle2 size={18} /> Your set results
                 </h3>
                 <p className="microcopy">
-                  Set details stay in this page. In a joined class, cumulative reps and form
-                  summaries are saved in Insights.
+                  {saveForUser
+                    ? 'Save status appears under your camera. Saved summaries are available in Insights.'
+                    : 'Set details stay on this page. Enable saved history in signed-in practice to keep them.'}
                 </p>
                 <table>
                   <thead>
@@ -1197,6 +1423,7 @@ export function CameraAnalyzer({
                       <th>{isHoldExercise(exercise) ? 'Seconds' : 'Reps'}</th>
                       <th>Target</th>
                       <th>Form estimate</th>
+                      <th>Rep quality</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1208,6 +1435,7 @@ export function CameraAnalyzer({
                           {s.amount >= config.target ? 'Reached' : `${s.amount} / ${config.target}`}
                         </td>
                         <td>{s.score === null ? '—' : `${s.score}/100`}</td>
+                        <td>{s.quality === null ? '—' : `${s.quality}/100`}</td>
                       </tr>
                     ))}
                   </tbody>

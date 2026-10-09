@@ -4,10 +4,13 @@ const { FilesetResolver, PoseLandmarker } = self.exports;
 let model;
 let variant = 'full';
 let delegate = 'CPU';
+let files;
+let cpuOptions;
+let fallbackUsed = false;
 self.onmessage = async ({ data }) => {
   if (data.type === 'init') {
     try {
-      const files = await FilesetResolver.forVisionTasks('/wasm');
+      files = await FilesetResolver.forVisionTasks('/wasm');
       variant = ['lite', 'full', 'heavy'].includes(data.variant) ? data.variant : 'full';
       const options = {
         baseOptions: { modelAssetPath: `/models/pose_landmarker_${variant}.task`, delegate: 'CPU' },
@@ -19,6 +22,7 @@ self.onmessage = async ({ data }) => {
         minPosePresenceConfidence: 0.5,
         minTrackingConfidence: 0.5,
       };
+      cpuOptions = options;
       if (typeof OffscreenCanvas !== 'undefined') {
         try {
           model = await PoseLandmarker.createFromOptions(files, {
@@ -48,7 +52,22 @@ self.onmessage = async ({ data }) => {
     try {
       if (!model) return;
       const started = performance.now();
-      const result = model.detectForVideo(data.bitmap, data.timestamp);
+      let result;
+      try {
+        result = model.detectForVideo(data.bitmap, data.timestamp);
+      } catch (error) {
+        if (delegate !== 'GPU' || fallbackUsed) throw error;
+        fallbackUsed = true;
+        try {
+          model.close();
+        } catch {
+          /* A lost GPU context may already be closed. */
+        }
+        model = await PoseLandmarker.createFromOptions(files, cpuOptions);
+        delegate = 'CPU';
+        self.postMessage({ type: 'backend', variant, delegate });
+        result = model.detectForVideo(data.bitmap, data.timestamp);
+      }
       self.postMessage({
         type: 'result',
         poses: result.landmarks,

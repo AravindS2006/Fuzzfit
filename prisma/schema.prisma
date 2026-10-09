@@ -23,6 +23,9 @@ model User {
   enrollments Enrollment[]
   messages Message[]
   billing BillingSubscription?
+  workoutSets WorkoutSet[]
+  checkIns CheckIn[]
+  assignments PlanAssignment[]
 }
 model Session {
   id String @id
@@ -79,6 +82,7 @@ model Studio {
   invitations Invitation[]
   plans WorkoutPlan[]
   classes ClassSession[]
+  assignments PlanAssignment[]
 }
 model Membership {
   id String @id @default(cuid())
@@ -87,6 +91,7 @@ model Membership {
   createdAt DateTime @default(now())
   studio Studio @relation(fields: [studioId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coachNote String @default("")
   @@unique([studioId, userId])
   @@index([userId])
 }
@@ -110,6 +115,7 @@ model WorkoutPlan {
   updatedAt DateTime @updatedAt
   studio Studio @relation(fields: [studioId], references: [id], onDelete: Cascade)
   classes ClassSession[]
+  assignments PlanAssignment[]
 }
 model ClassSession {
   id String @id @default(cuid())
@@ -130,6 +136,7 @@ model ClassSession {
   plan WorkoutPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
   enrollments Enrollment[]
   messages Message[]
+  workoutSets WorkoutSet[]
   @@index([studioId, startsAt])
 }
 model Enrollment {
@@ -157,6 +164,11 @@ model Metric {
   confidence Float
   phase String
   cue String
+  quality Float?
+  rangeDegrees Float?
+  repSeconds Float?
+  trackingCoverage Float?
+  rejectedReps Int @default(0)
   updatedAt DateTime @updatedAt
   enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
 }
@@ -164,11 +176,68 @@ model WorkoutSummary {
   id String @id @default(cuid())
   enrollmentId String @unique
   totalReps Int @default(0)
+  totalHoldSeconds Int @default(0)
   trackedSamples Int @default(0)
   scoreTotal Float @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+}
+model WorkoutSet {
+  id String @id @default(cuid())
+  clientId String
+  userId String
+  classId String?
+  revision Int @default(0)
+  exercise String
+  ruleVersion String
+  setNumber Int
+  target Int
+  reps Int
+  holdMs Int @default(0)
+  activeMs Int
+  trackedMs Int
+  formScore Float?
+  qualityScore Float?
+  rangeDegrees Float?
+  repSeconds Float?
+  confidence Float?
+  rejectedReps Int @default(0)
+  loadKg Float?
+  completed Boolean
+  startedAt DateTime
+  endedAt DateTime
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  class ClassSession? @relation(fields: [classId], references: [id], onDelete: Cascade)
+  @@unique([userId, clientId])
+  @@index([userId, endedAt])
+  @@index([classId])
+}
+model CheckIn {
+  id String @id @default(cuid())
+  userId String
+  energy Int
+  soreness Int
+  effort Int?
+  sleepHours Float?
+  bodyweightKg Float?
+  note String
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, createdAt])
+}
+model PlanAssignment {
+  id String @id @default(cuid())
+  studioId String
+  userId String
+  planId String
+  assignedAt DateTime @default(now())
+  studio Studio @relation(fields: [studioId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan WorkoutPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  @@unique([studioId, userId])
+  @@index([userId])
 }
 model Message {
   id String @id @default(cuid())

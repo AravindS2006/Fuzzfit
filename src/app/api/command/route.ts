@@ -158,6 +158,45 @@ export async function POST(request: Request) {
         result.id = plan.id;
         break;
       }
+      case 'assignPlan': {
+        const owned = requireCoach();
+        const member = await db.membership.findUnique({
+          where: { studioId_userId: { studioId: owned.id, userId: data.userId } },
+        });
+        if (!member) throw new ApiError(404, 'Choose a client from your own studio.');
+        if (data.planId === null) {
+          await db.planAssignment.deleteMany({
+            where: { studioId: owned.id, userId: data.userId },
+          });
+        } else {
+          const plan = await db.workoutPlan.findFirst({
+            where: { id: data.planId, studioId: owned.id },
+          });
+          if (!plan) throw new ApiError(404, 'Choose a plan from your own studio.');
+          await db.planAssignment.upsert({
+            where: { studioId_userId: { studioId: owned.id, userId: data.userId } },
+            create: { studioId: owned.id, userId: data.userId, planId: plan.id },
+            update: { planId: plan.id, assignedAt: new Date() },
+          });
+        }
+        break;
+      }
+      case 'coachNote': {
+        const owned = requireCoach();
+        const changed = await db.membership.updateMany({
+          where: { studioId: owned.id, userId: data.userId },
+          data: { coachNote: data.note },
+        });
+        if (!changed.count) throw new ApiError(404, 'Choose a client from your own studio.');
+        break;
+      }
+      case 'checkIn': {
+        if (user.role !== 'trainee') throw new ApiError(403, 'Check-ins are for trainee accounts.');
+        await rateLimit(user.id, 'check-in', 5);
+        const { action: _action, ...values } = data;
+        await db.checkIn.create({ data: { ...values, userId: user.id } });
+        break;
+      }
       case 'deletePlan': {
         const owned = requireCoach();
         const removed = await db.workoutPlan.deleteMany({

@@ -52,6 +52,7 @@ import type { WorkspaceData, ClassView, Block, ClientView, Plan } from '@/lib/ty
 import { apiCommand, fetchJson } from '@/lib/client';
 import { authClient } from '@/lib/auth-client';
 import { useTimeFormat } from './time-provider';
+import { TrainingProgress, CheckInForm, ClientCoaching } from './training-progress';
 const Studio = dynamic(() => import('./studio').then((m) => m.Studio), {
   ssr: false,
   loading: () => <div className="page-loading">Opening your studio…</div>,
@@ -251,6 +252,50 @@ export function Workspace({ initial, view }: { initial: WorkspaceData; view: str
         }
         if (payload.action === 'deletePlan')
           return { ...current, plans: current.plans.filter((p) => p.id !== payload.id) };
+        if (payload.action === 'assignPlan') {
+          const remaining = current.assignments.filter((a) => a.userId !== payload.userId);
+          const plan = current.plans.find((p) => p.id === payload.planId);
+          return {
+            ...current,
+            assignments: plan
+              ? [
+                  ...remaining,
+                  {
+                    userId: payload.userId as string,
+                    planId: plan.id,
+                    planName: plan.name,
+                    assignedAt: new Date().toISOString(),
+                  },
+                ]
+              : remaining,
+          };
+        }
+        if (payload.action === 'coachNote')
+          return {
+            ...current,
+            clients: current.clients.map((c) =>
+              c.id === payload.userId ? { ...c, coachNote: payload.note as string } : c,
+            ),
+          };
+        if (payload.action === 'checkIn')
+          return {
+            ...current,
+            checkIns: [
+              {
+                id,
+                userId: current.user.id,
+                userName: current.user.name,
+                energy: payload.energy as number,
+                soreness: payload.soreness as number,
+                effort: payload.effort as number | null,
+                sleepHours: payload.sleepHours as number | null,
+                bodyweightKg: payload.bodyweightKg as number | null,
+                note: payload.note as string,
+                createdAt: new Date().toISOString(),
+              },
+              ...current.checkIns,
+            ],
+          };
         if (payload.action === 'profile')
           return {
             ...current,
@@ -562,6 +607,28 @@ export function Workspace({ initial, view }: { initial: WorkspaceData; view: str
                   {coach ? 'Schedule session' : 'Camera practice'}
                 </button>
               </div>
+              {!coach && (
+                <section className="panel trainee-coaching-overview">
+                  <div>
+                    <h2>Ready for your next workout?</h2>
+                    <p>
+                      {data.assignments[0]
+                        ? `Your coach assigned ${data.plans.find((p) => p.id === data.assignments[0].planId)?.name ?? 'a workout plan'}. Open practice to train through its exercises.`
+                        : 'Share your energy and recovery with your coach before training.'}
+                    </p>
+                  </div>
+                  <div className="form-actions">
+                    <button className="button outline" onClick={() => show('checkIn')}>
+                      Share a check-in
+                    </button>
+                    {!!data.assignments.length && (
+                      <button className="button dark" onClick={() => go('practice')}>
+                        Train assigned plan
+                      </button>
+                    )}
+                  </div>
+                </section>
+              )}
               <div className="stats-grid">
                 <Stat
                   label={coach ? 'Active clients' : 'Upcoming sessions'}
@@ -972,7 +1039,7 @@ export function Workspace({ initial, view }: { initial: WorkspaceData; view: str
               )}
               <SectionTitle
                 title="Movement library"
-                detail="Four supported exercises. Clear guidance for each one."
+                detail={`${exercises.length} tracked movements. Clear guidance for each one.`}
               />
               <div className="exercise-grid">
                 {exercises.map((e) => (
@@ -1001,75 +1068,11 @@ export function Workspace({ initial, view }: { initial: WorkspaceData; view: str
           )}
           {activeView === 'analytics' && (
             <>
-              <PageHeading
-                eyebrow="SEE HOW FAR YOU’VE COME"
-                title="The progress behind the reps."
-                text="Insights from tracked sessions, with room for the human story."
-                action={
-                  <select
-                    aria-label="Insights date range"
-                    value={range}
-                    onChange={(e) => setRange(Number(e.target.value))}
-                  >
-                    {[7, 30, 90].map((n) => (
-                      <option value={n} key={n}>
-                        Last {n} days
-                      </option>
-                    ))}
-                  </select>
-                }
-              />
-              <div className="stats-grid">
-                <Stat
-                  label="Completed sessions"
-                  value={history.length}
-                  detail="Within the selected period"
-                  color="lime"
-                  icon={<CheckCircle2 size={19} />}
-                />
-                <Stat
-                  label="Form estimate"
-                  value={average === null ? '—' : `${average}%`}
-                  detail="Average of tracked summaries"
-                  color="lavender"
-                  icon={<Activity size={19} />}
-                />
-                <Stat
-                  label="Total tracked reps"
-                  value={reps}
-                  detail="Across completed sessions"
-                  color="peach"
-                  icon={<Flame size={19} />}
-                />
-                <Stat
-                  label="Coaching time"
-                  value={`${history.reduce((n, c) => n + c.duration, 0)}m`}
-                  detail="Scheduled durations, not active time"
-                  color="sky"
-                  icon={<Clock3 size={19} />}
-                />
-              </div>
-              <section className="panel analytics-chart">
-                <SectionTitle
-                  title="Movement quality over time"
-                  detail="Geometry-based estimates · compare alongside your coach’s feedback"
-                />
-                <ProgressChart classes={history} large />
-              </section>
+              <TrainingProgress data={data} onPractice={() => go('practice')} />
               <section className="panel">
-                <SectionTitle
-                  title="Session history"
-                  action={
-                    <span className="pill">{data.demo ? 'Illustrative data' : 'Your studio'}</span>
-                  }
-                />
+                <SectionTitle title="Session history" />
                 <SessionRows classes={history} onOpen={openClass} />
               </section>
-              <p className="microcopy">
-                Form scores reflect a limited set of camera-visible criteria and are not a validated
-                fitness rating. Tracking confidence, camera placement, and exercise variation affect
-                estimates.
-              </p>
             </>
           )}
           {activeView === 'settings' && (
@@ -1224,7 +1227,7 @@ export function Workspace({ initial, view }: { initial: WorkspaceData; view: str
               </div>
             </>
           )}
-          {activeView === 'practice' && <CameraPractice />}
+          {activeView === 'practice' && <CameraPractice data={data} />}
           {activeView === 'studio' && (
             <Studio
               initialClass={activeClass || upcoming[0]}
@@ -1289,11 +1292,13 @@ export function Workspace({ initial, view }: { initial: WorkspaceData; view: str
                   ? selectedPlan?.name || 'Build your next workout.'
                   : modal === 'client'
                     ? selectedClient?.name || 'Client profile'
-                    : modal === 'notifications'
-                      ? 'Coming up in your studio'
-                      : modal === 'studioInfo'
-                        ? 'Your studio'
-                        : 'A little guidance goes a long way.'
+                    : modal === 'checkIn'
+                      ? 'How are you feeling today?'
+                      : modal === 'notifications'
+                        ? 'Coming up in your studio'
+                        : modal === 'studioInfo'
+                          ? 'Your studio'
+                          : 'A little guidance goes a long way.'
           }
           wide={modal === 'plan' || modal === 'schedule'}
           onClose={() => setModal(null)}
@@ -1394,6 +1399,12 @@ export function Workspace({ initial, view }: { initial: WorkspaceData; view: str
               <Avatar name={selectedClient.name} />
               <p>{selectedClient.email}</p>
               <div className="goal-pill">{selectedClient.goal}</div>
+              <ClientCoaching
+                client={data.clients.find((c) => c.id === selectedClient.id) ?? selectedClient}
+                data={data}
+                onSave={command}
+                busy={busy}
+              />
               <SectionTitle
                 title="Training together"
                 detail={`Joined ${dateLabel(selectedClient.joinedAt)}`}
@@ -1409,6 +1420,7 @@ export function Workspace({ initial, view }: { initial: WorkspaceData; view: str
               />
             </div>
           )}
+          {modal === 'checkIn' && <CheckInForm onSave={command} busy={busy} />}
           {modal === 'notifications' && (
             <SessionRows
               classes={upcoming.slice(0, 5)}
@@ -1663,8 +1675,12 @@ function SessionRows({
 const Camera = dynamic(() => import('./camera-analyzer').then((m) => m.CameraAnalyzer), {
   ssr: false,
 });
-function CameraPractice() {
+function CameraPractice({ data }: { data: WorkspaceData }) {
   const [exercise, setExercise] = useState<ClassView['exercise']>('squat');
+  const [saveHistory, setSaveHistory] = useState(false);
+  const [assignedBlock, setAssignedBlock] = useState(-1);
+  const assignment = data.assignments.find((a) => a.userId === data.user.id);
+  const plan = data.plans.find((p) => p.id === assignment?.planId);
   return (
     <section className="meeting-practice">
       <div className="practice-heading">
@@ -1688,10 +1704,54 @@ function CameraPractice() {
           </select>
         </label>
       </div>
-      <Camera exercise={exercise} />
+      <div className="practice-options">
+        {plan && (
+          <label>
+            Assigned plan: {plan.name}
+            <select
+              aria-label="Assigned plan exercise"
+              value={assignedBlock}
+              onChange={(event) => {
+                const index = Number(event.target.value);
+                setAssignedBlock(index);
+                if (index >= 0) setExercise(plan.blocks[index].exercise);
+              }}
+            >
+              <option value={-1}>Choose an exercise</option>
+              {plan.blocks.map((block, index) => (
+                <option key={index} value={index}>
+                  {index + 1}. {exerciseName(block.exercise)} · {block.sets} sets
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {!data.demo && (
+          <label className="history-consent">
+            <input
+              type="checkbox"
+              checked={saveHistory}
+              onChange={(event) => setSaveHistory(event.target.checked)}
+            />
+            <span>Save workout history to my profile and share with my coach</span>
+          </label>
+        )}
+      </div>
+      <Camera
+        exercise={exercise}
+        block={
+          assignedBlock >= 0 && plan?.blocks[assignedBlock]?.exercise === exercise
+            ? plan.blocks[assignedBlock]
+            : undefined
+        }
+        saveForUser={saveHistory ? data.user.id : undefined}
+        historyUserId={!data.demo ? data.user.id : undefined}
+      />
       <p className="practice-privacy">
-        Local practice stays on this device. Live class summaries are shared with your coach after
-        you join with consent.
+        Camera frames are processed on this device.{' '}
+        {saveHistory
+          ? 'Set summaries are saved to your profile and available to your coach.'
+          : 'Practice history stays on this page unless you enable saving.'}
       </p>
     </section>
   );
@@ -1903,6 +1963,31 @@ function PlanForm({
                 />
               </label>
             ))}
+            <label>
+              Load (kg, optional)
+              <input
+                type="number"
+                aria-label={`Load for exercise ${i + 1}`}
+                min={0}
+                max={500}
+                step={0.5}
+                value={b.loadKg ?? ''}
+                disabled={!editable}
+                onChange={(event) =>
+                  setBlocks((values) =>
+                    values.map((block, index) =>
+                      index === i
+                        ? {
+                            ...block,
+                            loadKg:
+                              event.target.value === '' ? undefined : Number(event.target.value),
+                          }
+                        : block,
+                    ),
+                  )
+                }
+              />
+            </label>
             {editable && (
               <button
                 type="button"

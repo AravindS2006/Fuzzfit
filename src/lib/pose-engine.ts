@@ -21,6 +21,8 @@ export type Analysis = {
   geometrySource?: '2d' | '3d';
   trackedSide?: 'left' | 'right';
   filteredLandmarks?: Landmark[];
+  trackingCoverage?: number | null;
+  rejectedReps?: number;
 };
 
 type Filter = { raw: number; value: number; velocity: number; timestamp: number };

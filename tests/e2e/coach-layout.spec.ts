@@ -132,6 +132,17 @@ test('a trainee can resize, minimize, and restore the coach without replacing wo
           expect(box!.width).toBeGreaterThanOrEqual(104);
           expect(box!.width).toBeLessThanOrEqual(viewport.width <= 950 ? 128 : 184);
           await expectInsideCamera();
+          for (const position of ['top-left', 'bottom-left', 'bottom-right', 'top-right']) {
+            await page.getByRole('button', { name: 'More options', exact: true }).click();
+            await page.getByLabel('Floating coach position').selectOption(position);
+            await page.getByRole('button', { name: 'Close dialog' }).click();
+            await expect(page.locator('.trainee-video-layout')).toHaveAttribute(
+              'data-coach-position',
+              position,
+            );
+            await expectInsideCamera();
+            await expect(analyzer).toHaveAttribute('data-layout-fixture', fixtureId);
+          }
         }
         expect(box!.x).toBeGreaterThanOrEqual(-1);
         expect(box!.y).toBeGreaterThanOrEqual(-1);

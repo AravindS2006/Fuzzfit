@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 process.loadEnvFile('.env');
 const base = process.env.BETTER_AUTH_URL || 'http://localhost:3000';
@@ -120,6 +120,96 @@ try {
   const start = new Date(Date.now() + 3600000).toISOString();
   await check(
     '/api/command',
+    { action: 'assignPlan', userId: trainee.id, planId: plan.id },
+    trainee,
+    403,
+  );
+  await check(
+    '/api/command',
+    { action: 'assignPlan', userId: trainee.id, planId: plan.id },
+    other,
+    404,
+  );
+  await check('/api/command', { action: 'assignPlan', userId: trainee.id, planId: plan.id }, coach);
+  await check(
+    '/api/command',
+    { action: 'coachNote', userId: trainee.id, note: 'Private training note' },
+    coach,
+  );
+  await check(
+    '/api/command',
+    { action: 'coachNote', userId: trainee.id, note: 'Forbidden' },
+    trainee,
+    403,
+  );
+  await check(
+    '/api/command',
+    { action: 'coachNote', userId: trainee.id, note: 'Forbidden' },
+    other,
+    404,
+  );
+  const checkIn = {
+    action: 'checkIn',
+    energy: 4,
+    soreness: 2,
+    effort: 7,
+    sleepHours: 8,
+    bodyweightKg: 72.5,
+    note: 'Ready to train',
+  };
+  await check('/api/command', checkIn, coach, 403);
+  await check('/api/command', { ...checkIn, energy: 6 }, trainee, 400);
+  await check('/api/command', checkIn, trainee);
+  const record = {
+    clientId: randomUUID(),
+    classId: null,
+    revision: 0,
+    exercise: 'curl',
+    ruleVersion: 'profile-v3',
+    setNumber: 1,
+    target: 2,
+    reps: 2,
+    holdMs: 0,
+    activeMs: 9000,
+    trackedMs: 8000,
+    formScore: 80,
+    qualityScore: 92,
+    rangeDegrees: 95,
+    repSeconds: 2,
+    confidence: 0.9,
+    rejectedReps: 1,
+    loadKg: 5,
+    completed: true,
+    startedAt: new Date(Date.now() - 10000).toISOString(),
+    endedAt: new Date().toISOString(),
+  };
+  await check('/api/workout-sets', record, {}, 401);
+  await check('/api/workout-sets', { ...record, ownerId: other.id }, trainee, 403);
+  await check('/api/workout-sets', { ...record, trackedMs: 10000 }, trainee, 400);
+  await check('/api/workout-sets', { ...record, completed: false }, trainee, 400);
+  const recorded = await check('/api/workout-sets', record, trainee);
+  const duplicate = await check('/api/workout-sets', { ...record, reps: 3 }, trainee);
+  assert.equal(recorded.id, duplicate.id);
+  assert.equal((await db.workoutSet.findUniqueOrThrow({ where: { id: recorded.id } })).reps, 2);
+  const traineesView = await check('/api/workspace', undefined, trainee);
+  const coachesView = await check('/api/workspace', undefined, coach);
+  const unrelatedView = await check('/api/workspace', undefined, other);
+  assert.equal(traineesView.assignments[0].planId, plan.id);
+  assert.equal(traineesView.workoutSets[0].reps, 2);
+  assert.equal(coachesView.clients[0].coachNote, 'Private training note');
+  assert.equal(JSON.stringify(traineesView).includes('Private training note'), false);
+  assert.equal(coachesView.checkIns[0].bodyweightKg, 72.5);
+  assert.deepEqual(
+    [
+      unrelatedView.workoutSets.length,
+      unrelatedView.assignments.length,
+      unrelatedView.checkIns.length,
+    ],
+    [0, 0, 0],
+  );
+  checks += 8;
+  await check(
+    '/api/command',
     {
       action: 'createClass',
       title: 'Forbidden client',
@@ -153,7 +243,34 @@ try {
   await check('/api/video/token', { classId: item.id }, trainee, 409);
   await check('/api/command', { action: 'classControl', id: item.id, control: 'start' }, coach);
   await check('/api/video/token', { classId: item.id }, trainee, 403);
+  await check(
+    '/api/workout-sets',
+    { ...record, clientId: randomUUID(), classId: item.id },
+    trainee,
+    403,
+  );
   await check('/api/command', { action: 'consent', id: item.id, consent: true }, trainee);
+  await db.classSession.update({
+    where: { id: item.id },
+    data: { startedAt: new Date(Date.now() - 20000) },
+  });
+  await check(
+    '/api/workout-sets',
+    { ...record, clientId: randomUUID(), classId: item.id, exercise: 'squat' },
+    trainee,
+  );
+  await check(
+    '/api/workout-sets',
+    { ...record, clientId: randomUUID(), classId: item.id },
+    other,
+    404,
+  );
+  await check(
+    '/api/workout-sets',
+    { ...record, clientId: randomUUID(), classId: item.id, revision: 100 },
+    trainee,
+    409,
+  );
   const metric = {
     classId: item.id,
     exercise: 'squat',
@@ -263,6 +380,11 @@ try {
   const personal = await check('/api/export', undefined, trainee);
   assert.equal(personal.profile.email, trainee.email);
   assert.equal(personal.workouts[0].summary.totalReps, 9);
+  assert.equal(personal.workouts[0].summary.totalHoldSeconds, 1);
+  assert.equal(personal.workoutSets.length, 2);
+  assert.equal(personal.checkIns[0].note, 'Ready to train');
+  assert.equal(JSON.stringify(personal).includes('Private training note'), false);
+  checks += 4;
   checks++;
   const health = await check('/api/health');
   assert.equal(health.status, 'ok');

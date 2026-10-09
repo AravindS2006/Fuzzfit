@@ -13,6 +13,14 @@ export async function GET() {
       where: { userId: user.id },
       select: { createdAt: true, studio: { select: { name: true } } },
     });
+    const [workoutSets, checkIns, assignments] = await Promise.all([
+      db.workoutSet.findMany({ where: { userId: user.id }, orderBy: { endedAt: 'desc' } }),
+      db.checkIn.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' } }),
+      db.planAssignment.findMany({
+        where: { userId: user.id },
+        select: { assignedAt: true, plan: { select: { name: true, blocks: true } } },
+      }),
+    ]);
     return NextResponse.json(
       {
         exportedAt: new Date().toISOString(),
@@ -24,6 +32,9 @@ export async function GET() {
           createdAt: user.createdAt,
         },
         memberships,
+        workoutSets,
+        checkIns,
+        assignments,
         workouts: enrollments.map((e) => ({
           class: e.class,
           consentAt: e.consentAt,

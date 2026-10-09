@@ -47,7 +47,11 @@ type LiveState = {
   participants: ClassView['participants'];
   messages: MessageView[];
 };
-type CoachVideoLayout = { size: 'small' | 'medium' | 'large'; minimized: boolean };
+type CoachVideoLayout = {
+  size: 'small' | 'medium' | 'large';
+  minimized: boolean;
+  position: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
+};
 const coachVideoPreferenceKey = 'fuzzfit:coach-video-layout:v1';
 export function Studio({
   initialClass,
@@ -91,7 +95,11 @@ export function Studio({
   const [coachVideoLayout, setCoachVideoLayout] = useState<CoachVideoLayout>({
     size: 'small',
     minimized: false,
+    position: 'top-right',
   });
+  const [cameraHeight, setCameraHeight] = useState(0);
+  const [mirror, setMirror] = useState(true);
+  const [coachVolume, setCoachVolume] = useState(1);
   const coachVideoSizeRef = useRef<HTMLSelectElement>(null);
   const enlargeCoachVideoRef = useRef<HTMLButtonElement>(null);
   const meetingRef = useRef<HTMLDivElement>(null);
@@ -123,7 +131,15 @@ export function Studio({
         ['small', 'medium', 'large'].includes(saved.size) &&
         typeof saved.minimized === 'boolean'
       )
-        setCoachVideoLayout({ size: saved.size, minimized: saved.minimized });
+        setCoachVideoLayout({
+          size: saved.size,
+          minimized: saved.minimized,
+          position: ['top-right', 'top-left', 'bottom-right', 'bottom-left'].includes(
+            saved.position,
+          )
+            ? saved.position
+            : 'top-right',
+        });
     } catch {
       // The meeting remains usable when device storage is unavailable.
     }
@@ -222,6 +238,11 @@ export function Studio({
             confidence: a.confidence,
             phase: a.phase,
             cue: a.cue,
+            quality: a.lastRepQuality ?? null,
+            rangeDegrees: a.rangeDegrees ?? null,
+            repSeconds: a.lastRepSeconds ?? null,
+            trackingCoverage: a.trackingCoverage ?? null,
+            rejectedReps: a.rejectedReps ?? 0,
           }),
         });
         setAnalysisWarning('');
@@ -719,6 +740,7 @@ export function Studio({
                         </div>
                         <div className="meeting-tile-name">
                           <strong>{p.name}</strong>
+                          {person && <ConnectionBadge participant={person} />}
                           {person?.isMicrophoneEnabled ? <Mic size={15} /> : <MicOff size={15} />}
                         </div>
                       </div>
@@ -760,7 +782,10 @@ export function Studio({
                 >
                   <div className="participant-feed">
                     {connected && camera && room.current ? (
-                      <ParticipantVideo participant={room.current.localParticipant} />
+                      <ParticipantVideo
+                        participant={room.current.localParticipant}
+                        mirror={mirror}
+                      />
                     ) : (
                       <div className="meeting-empty-video">
                         <Avatar name={user.name} />
@@ -789,6 +814,8 @@ export function Studio({
             ) : (
               <div
                 className={`trainee-video-layout coach-video-${coachVideoLayout.size}${coachVideoLayout.minimized ? ' coach-video-minimized' : ''}`}
+                data-coach-position={coachVideoLayout.position}
+                style={{ '--trainee-camera-height': `${cameraHeight}px` } as React.CSSProperties}
               >
                 <div className="trainee-self-stage">
                   <CameraAnalyzer
@@ -796,6 +823,11 @@ export function Studio({
                     paused={item.paused || item.status !== 'live'}
                     revision={item.revision}
                     stream={stream}
+                    mirror={mirror}
+                    onCameraHeight={setCameraHeight}
+                    saveForUser={!demo && consent ? user.id : undefined}
+                    historyUserId={!demo ? user.id : undefined}
+                    classId={item.id}
                     block={item.workout?.find((b) => b.exercise === item.exercise)}
                     sessionCamera={!demo && services.video}
                     onEnableCamera={
@@ -896,6 +928,7 @@ export function Studio({
                             ? 'Speaking'
                             : 'Coach audio'}
                       </span>
+                      {coachParticipant && <ConnectionBadge participant={coachParticipant} />}
                       {coachParticipant?.isMicrophoneEnabled ? (
                         <Mic size={15} />
                       ) : (
@@ -1033,13 +1066,46 @@ export function Studio({
             </div>
           </footer>
           {remote.map((p) => (
-            <ParticipantAudio key={p.identity} participant={p} />
+            <ParticipantAudio
+              key={p.identity}
+              participant={p}
+              volume={!coach && p.identity === item.coachId ? coachVolume : 1}
+            />
           ))}
         </>
       )}
       {coachToolsOpen && coach && (
         <Modal title="Coach tools" onClose={() => setCoachToolsOpen(false)}>
           <div className="form-stack">
+            <div className="coach-roster" aria-label="Trainee monitoring roster">
+              {item.participants.map((person) => {
+                const fresh =
+                  person.metric &&
+                  person.metric.revision === item.revision &&
+                  person.metric.exercise === item.exercise &&
+                  !item.paused &&
+                  Date.now() - Date.parse(person.metric.updatedAt) < 12000;
+                return (
+                  <button
+                    type="button"
+                    key={person.id}
+                    className={`coach-roster-row ${focus === person.id ? 'selected' : ''}`}
+                    onClick={() => setFocus(person.id)}
+                    aria-pressed={focus === person.id}
+                  >
+                    <strong>
+                      {person.name}
+                      {person.helpRequested ? ' · Help requested' : ''}
+                    </strong>
+                    <span>
+                      {fresh
+                        ? `${Math.round(person.metric!.confidence * 100)}% tracking · ${person.metric!.quality == null ? 'No completed rep' : `${Math.round(person.metric!.quality)} /100 last rep`}`
+                        : 'No recent tracking'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
             <label>
               Send guidance to
               <select
@@ -1063,6 +1129,19 @@ export function Studio({
                 <small>
                   {new Date(focused.metric.updatedAt).toLocaleTimeString()} · last reported feedback
                 </small>
+                <p className="microcopy">
+                  {focused.metric.rangeDegrees == null
+                    ? 'Range unavailable'
+                    : `${Math.round(focused.metric.rangeDegrees)}° last range`}{' '}
+                  ·{' '}
+                  {focused.metric.repSeconds == null
+                    ? 'Tempo unavailable'
+                    : `${focused.metric.repSeconds.toFixed(1)}s last rep`}{' '}
+                  ·{' '}
+                  {focused.metric.trackingCoverage == null
+                    ? 'Coverage unavailable'
+                    : `${Math.round(focused.metric.trackingCoverage)}% set tracking`}
+                </p>
               </div>
             )}
             <form
@@ -1189,6 +1268,52 @@ export function Studio({
               <SwitchCamera size={17} />
               Flip camera
             </button>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={mirror}
+                onChange={(event) => setMirror(event.target.checked)}
+              />
+              Mirror my camera preview
+            </label>
+            {!coach && (
+              <>
+                <label>
+                  Floating coach position
+                  <select
+                    aria-label="Floating coach position"
+                    value={coachVideoLayout.position}
+                    onChange={(event) =>
+                      updateCoachVideoLayout({
+                        ...coachVideoLayout,
+                        position: event.target.value as CoachVideoLayout['position'],
+                      })
+                    }
+                  >
+                    <option value="top-right">Top right</option>
+                    <option value="top-left">Top left</option>
+                    <option value="bottom-right">Bottom right</option>
+                    <option value="bottom-left">Bottom left</option>
+                  </select>
+                </label>
+                <label>
+                  Coach audio volume: {Math.round(coachVolume * 100)}%
+                  <input
+                    aria-label="Coach audio volume"
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={coachVolume}
+                    onChange={(event) => setCoachVolume(Number(event.target.value))}
+                  />
+                </label>
+                <p className="microcopy">
+                  Position applies to the small or minimized coach view. Volume changes only what
+                  you hear.
+                </p>
+              </>
+            )}
             <button
               className="button outline full"
               disabled={!connected}
@@ -1320,7 +1445,29 @@ export function Studio({
   );
 }
 
-function ParticipantVideo({ participant }: { participant: Participant }) {
+function ConnectionBadge({ participant }: { participant: Participant }) {
+  const quality = participant.connectionQuality;
+  if (!quality || quality === 'unknown') return null;
+  return (
+    <span
+      className={`connection-quality quality-${quality}`}
+      role="img"
+      aria-label={`${quality} video connection`}
+      title={`${quality} connection`}
+    >
+      <i />
+      <i />
+      <i />
+    </span>
+  );
+}
+function ParticipantVideo({
+  participant,
+  mirror = false,
+}: {
+  participant: Participant;
+  mirror?: boolean;
+}) {
   const ref = useRef<HTMLVideoElement>(null);
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -1343,7 +1490,13 @@ function ParticipantVideo({ participant }: { participant: Participant }) {
   ]);
   return (
     <>
-      <video className="participant-video" ref={ref} autoPlay playsInline muted />
+      <video
+        className={`participant-video${mirror ? ' mirrored-preview' : ''}`}
+        ref={ref}
+        autoPlay
+        playsInline
+        muted
+      />
       {!ready && (
         <div className="video-disabled">
           <VideoOff size={23} />
@@ -1353,19 +1506,29 @@ function ParticipantVideo({ participant }: { participant: Participant }) {
     </>
   );
 }
-function ParticipantAudio({ participant }: { participant: Participant }) {
+function ParticipantAudio({
+  participant,
+  volume = 1,
+}: {
+  participant: Participant;
+  volume?: number;
+}) {
   const tracks = Array.from(participant.audioTrackPublications.values()).flatMap((p) =>
     p.track ? [p.track] : [],
   );
   return (
     <>
       {tracks.map((track) => (
-        <MeetingAudioTrack key={track.sid || track.mediaStreamTrack.id} track={track} />
+        <MeetingAudioTrack
+          key={track.sid || track.mediaStreamTrack.id}
+          track={track}
+          volume={volume}
+        />
       ))}
     </>
   );
 }
-function MeetingAudioTrack({ track }: { track: Track }) {
+function MeetingAudioTrack({ track, volume }: { track: Track; volume: number }) {
   const ref = useRef<HTMLAudioElement>(null);
   useEffect(() => {
     const element = ref.current;
@@ -1376,5 +1539,8 @@ function MeetingAudioTrack({ track }: { track: Track }) {
       element.srcObject = null;
     };
   }, [track]);
+  useEffect(() => {
+    if (ref.current) ref.current.volume = Math.min(1, Math.max(0, volume));
+  }, [volume]);
   return <audio ref={ref} autoPlay />;
 }

@@ -20,6 +20,9 @@ export function demoData(): WorkspaceData {
   }));
   return {
     demo: true,
+    workoutSets: [],
+    checkIns: [],
+    assignments: [],
     user: {
       id: 'demo-coach',
       name: 'Alex Morgan',

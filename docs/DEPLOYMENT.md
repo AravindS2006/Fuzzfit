@@ -1,8 +1,8 @@
 # Deploy Fuzzfit on Vercel and LiveKit Cloud
 
-The workspace is linked to `aravinds2006s-projects/fuzzfit`, project `prj_m5uOzEvrg5TZ44AKN2CJ2jRJlERK`. Its assigned app domain is `fuzzfit.vercel.app`. The private GitHub repository is connected and pushes trigger remote builds. All nine core production keys are present; `EMAIL_DELIVERY=test` enables operator signup while deferring email. Service connectivity and launch checks remain separate from configuration validation. Configure secrets directly in the providers rather than sending them in chat.
+The workspace is linked to `aravinds2006s-projects/fuzzfit`, project `prj_m5uOzEvrg5TZ44AKN2CJ2jRJlERK`. Its assigned app domain is `fuzzfit.vercel.app`. The private GitHub repository is connected and pushes trigger remote builds. All nine core production keys are present; `EMAIL_DELIVERY=test` enables operator signup while deferring email. Automated coach/trainee flows and real LiveKit Cloud transport have been verified; physical-device accuracy and broader launch checks remain separate from configuration validation. See the current verification report. Configure secrets directly in the providers rather than sending them in chat.
 
-The private auth and cleanup secrets, exact app origin, PostgreSQL provider, and LiveKit keys have been configured for Production. Node 22.x, the guarded build command, and staged domain assignment are configured. Live service checks remain pending. See `.env.production.example` for the production template.
+The private auth and cleanup secrets, exact app origin, PostgreSQL provider, and LiveKit keys have been configured for Production. Node 22.x, the guarded build command, and staged domain assignment are configured. Release checks are documented in VERIFICATION.md. See `.env.production.example` for the production template.
 
 ## 1. PostgreSQL
 
@@ -16,7 +16,7 @@ npx vercel@62.4.0 integration add neon --name fuzzfit-production --plan free_v3 
 
 Do not retry creation if a previous attempt completed; inspect the integration/resource first. Use a pooled runtime URL and a direct migration URL. Neon injects `DATABASE_URL_UNPOOLED`; set `DIRECT_URL` to that same direct connection in Production. Keep preview, test, and production data separate. The Free plan is an initial setup choice, not a throughput/SLA guarantee; evaluate backups, limits, and load before broad launch. [Neon Marketplace integration](https://vercel.com/integrations/neon).
 
-The canonical model is `prisma/schema.prisma`. `scripts/postgres.mjs` creates an equivalent ignored PostgreSQL schema; committed PostgreSQL migrations are in `prisma/postgres/migrations`. Migration `20261006000000_init` was applied successfully to the live Neon database in this session. Full PostgreSQL auth, concurrency, and load tests remain pending.
+The canonical model is `prisma/schema.prisma`. `scripts/postgres.mjs` creates an equivalent ignored PostgreSQL schema; committed PostgreSQL migrations are in `prisma/postgres/migrations`. Migration `20261006000000_init` was applied to the live Neon database. The professional coaching release adds `20261009000000_training_insights`: workout-set history, check-ins, plan assignments, private notes, richer latest metrics, and hold totals. Its SQL was rehearsed in an isolated schema with legacy data before release. Apply additive migrations before promoting the matching application build. Broader concurrency, load, and restore trials remain separate acceptance work.
 
 Run migrations from a secure release environment with the production values loaded:
 
@@ -99,7 +99,7 @@ The included CI performs local checks on Windows/Edge without deploying or sendi
 
 Configure Stripe Checkout, a customer portal, and a webhook to `/api/billing/webhook` for subscription create/update/delete and checkout completion. The endpoint verifies the raw-body signature, records event IDs transactionally, and reconciles subscription state with Stripe. Test duplicate, delayed, out-of-order, renewal failure, canceled, and replay scenarios before enabling actual charges.
 
-Vercel's scheduled `/api/retention` job runs daily and requires `Authorization: Bearer <CRON_SECRET>`. It removes expired authentication/invite/rate records, latest metrics older than 7 days, and messages older than 90 days. Confirm the job's successful run from provider logs. Aggregated workout history remains until deletion/retention policy is implemented by the operator.
+Vercel's scheduled `/api/retention` job runs daily and requires `Authorization: Bearer <CRON_SECRET>`. It removes expired authentication/invite/rate records, latest metrics older than 7 days, and messages older than 90 days. Confirm the job's successful run from provider logs. Aggregated and detailed workout history, check-ins, assignments, and private notes follow the operator’s published deletion/retention policy; account/studio deletion cascades through related records.
 
 ## 7. Before public launch
 

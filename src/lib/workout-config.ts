@@ -9,6 +9,7 @@ export type WorkoutConfig = {
   topAngle: number;
   bottomAngle: number;
   minRepMs: number;
+  loadKg: number | null;
 };
 
 export function defaultWorkoutConfig(exercise: ExerciseId, block?: Block): WorkoutConfig {
@@ -21,6 +22,7 @@ export function defaultWorkoutConfig(exercise: ExerciseId, block?: Block): Worko
     topAngle: profile.topAngle,
     bottomAngle: profile.bottomAngle,
     minRepMs: profile.minRepMs,
+    loadKg: block?.loadKg ?? null,
   };
 }
 
@@ -55,5 +57,9 @@ export function normalizeWorkoutConfig(
       topAngle - minimumGap,
     ),
     minRepMs: bounded(input.minRepMs, defaults.minRepMs, 350, 3000),
+    loadKg:
+      typeof input.loadKg === 'number' && Number.isFinite(input.loadKg)
+        ? Math.max(0, Math.min(500, input.loadKg))
+        : defaults.loadKg,
   };
 }

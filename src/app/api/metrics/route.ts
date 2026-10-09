@@ -47,6 +47,11 @@ export async function POST(request: Request) {
           confidence: data.confidence,
           phase: data.phase,
           cue: data.cue,
+          quality: validScore === null ? null : (data.quality ?? null),
+          rangeDegrees: data.rangeDegrees ?? null,
+          repSeconds: data.repSeconds ?? null,
+          trackingCoverage: data.trackingCoverage ?? null,
+          rejectedReps: data.rejectedReps ?? 0,
         };
         await tx.metric.upsert({
           where: { enrollmentId: enrollment.id },
@@ -58,11 +63,13 @@ export async function POST(request: Request) {
           create: {
             enrollmentId: enrollment.id,
             totalReps: delta,
+            totalHoldSeconds: holdDelta,
             trackedSamples: validScore === null ? 0 : 1,
             scoreTotal: validScore ?? 0,
           },
           update: {
             totalReps: { increment: delta },
+            totalHoldSeconds: { increment: holdDelta },
             trackedSamples: { increment: validScore === null ? 0 : 1 },
             scoreTotal: { increment: validScore ?? 0 },
           },

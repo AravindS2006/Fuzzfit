@@ -1,8 +1,8 @@
 # Fuzzfit
 
-A live fitness coaching studio built with Next.js, Better Auth, Prisma, LiveKit, and MediaPipe. Includes coach and trainee workspaces, invitations, scheduling, workout plans, group video, local camera analysis, correction cues, session messages, history, settings, and data export.
+A live fitness coaching studio built with Next.js, Better Auth, Prisma, LiveKit, and MediaPipe. Includes coach and trainee workspaces, invitations, scheduling, assigned workout plans, private coach notes, check-ins, group video, local camera analysis, correction cues, durable set history, progress metrics, settings, and CSV/data export.
 
-**Status:** functional local implementation with production deployment configuration. External service integration, exercise accuracy validation, independent security review, and public launch remain pending. Do not describe this build as a clinically validated or fully production-certified coaching system.
+**Status:** deployed for operator testing at [fuzzfit.vercel.app](https://fuzzfit.vercel.app), with Vercel, Neon PostgreSQL, and LiveKit Cloud. See the current [verification report](docs/VERIFICATION.md). Physical-device accuracy trials, independent review, email/domain setup, and broader public-launch acceptance remain separate work.
 
 ## Run locally
 
@@ -42,18 +42,21 @@ npm run test:email-disabled
 npm run test:signup
 ```
 
-The browser test configuration uses an installed Microsoft Edge. Change the channel or install Playwright Chromium if Edge is unavailable. The worker test uses a simulated camera and never accesses a physical camera. API/browser integration accounts use `example.test` emails and are removed afterward. Use a dedicated local test database. The accessibility scan covers 17 page, dialog, populated studio, and mobile states and writes `docs/accessibility-report.json`; the real trainee journey also checks its private-cue studio view. Automated checks do not establish WCAG conformance. On Windows, stop the dev server before `npm run build` or Prisma generation so the query engine DLL is not locked.
+The browser test configuration uses an installed Microsoft Edge. Change the channel or install Playwright Chromium if Edge is unavailable. The worker test uses a simulated camera and never accesses a physical camera. API/browser integration accounts use `example.test` emails and are removed afterward. Use a dedicated local test database. The accessibility scan covers 20 page, dialog, populated studio, and mobile states and writes `docs/accessibility-report.json`; the real trainee journey also checks its private-cue studio view. Automated checks do not establish WCAG conformance. On Windows, stop the dev server before `npm run build` or Prisma generation so the query engine DLL is not locked.
 
 ## How camera analysis works
 
-MediaPipe detects up to two bodies in a classic worker, using the pinned Pose Landmarker Lite model and local WASM files. More than one detected body, low confidence, partial framing, unclear geometry, or an unsupported camera view suppress scoring. A single frame is processed at a time at a capped cadence. Camera tracks and the worker are closed on stop/unmount. Supported exercises: squat, push-up, curl, plank.
+MediaPipe Pose Landmarker Full detects 33 landmarks in a worker using local model/WASM assets, with Lite and Heavy available in workout settings. One-person VIDEO tracking enables temporal smoothing. A lost GPU runtime retries through CPU once. Keep a single trainee in view; crowded views are unsupported. The app processes one frame at a time, smooths the overlay, and closes workers and owned tracks on stop/unmount.
 
-Aspect-corrected joint geometry and exercise-specific state machines estimate phases, count controlled rep cycles, estimate plank hold duration, and produce limited form cues. Scores are transparent **heuristics**, not a learned fitness rating or proof of perfect/safe technique. See the research plan for validation targets and measurement limitations. A coach can send individual cues. No calories, injury predictions, body-fat estimates, or fake precision are inferred from the camera.
+The profile-v3 engine uses image/world geometry, confidence gates, stable limb selection, adaptive smoothing, exercise profiles, state transitions, hysteresis, range and duration validation, form rules, cooldown, and completed-rep quality. It supports squat, push-up, curl, plank, lunge, shoulder press, lateral raise, jumping jack, glute bridge, crunch, row, and side plank. Five-second hands-free starting tolerates small posture changes and pauses for temporary tracking uncertainty.
+
+Scores estimate visible movement rather than proving safe or perfect technique. Signed-in trainees can save practice history explicitly; live training uses join consent. Set records retain reps/holds, observed active and tracked time, form and rep quality, range, tempo, confidence, rejection counts, and optional reported load. Failed saves queue by account and can be retried without duplicate rows. No calories, heart rate, injury predictions, or body-fat estimates are inferred.
 
 When connected to a class, the trainee analyzes the LiveKit local camera track rather than opening a second camera. Limited summaries are sent every 3 seconds, scoped to that trainee's enrollment and current exercise revision. Coach updates use polling with backoff. Trainee summaries remain private to the trainee and their coach. Video is a consented **group** stream visible to enrolled classmates; the application does not record it.
 
 ## Documentation
 
+- [Current professional coaching phase plan](docs/PHASE_2_PLAN.md)
 - [Research and implementation plan](docs/IMPLEMENTATION_PLAN.md)
 - [Vercel and LiveKit deployment](docs/DEPLOYMENT.md)
 - [Test as a coach and trainee](docs/TESTING_GUIDE.md)
