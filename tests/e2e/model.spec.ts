@@ -87,7 +87,9 @@ for (const failure of [
       expect(starts).toBeGreaterThanOrEqual(2);
       expect(starts).toBeLessThanOrEqual(3);
       await expect(
-        page.getByText('Step into view and keep the required joints visible.'),
+        page.getByText(
+          'Step back until your head and required joints fit in view. Use even lighting.',
+        ),
       ).toBeVisible();
       expect(
         await page.evaluate(() => {
@@ -162,7 +164,9 @@ for (const [variant, cpuFallback] of [
         timeout: 45000,
       });
       await expect(
-        page.getByText('Step into view and keep the required joints visible.'),
+        page.getByText(
+          'Step back until your head and required joints fit in view. Use even lighting.',
+        ),
       ).toBeVisible({ timeout: 20000 });
       const backend = await page.evaluate(
         () =>
@@ -242,7 +246,9 @@ test('a stalled GPU inference recovers through a real CPU worker without replaci
         document.querySelector('video')?.srcObject as MediaStream;
     });
     await expect(
-      page.getByText('Step into view and keep the required joints visible.'),
+      page.getByText(
+        'Step back until your head and required joints fit in view. Use even lighting.',
+      ),
     ).toBeVisible({ timeout: 20000 });
     expect(
       await page.evaluate(

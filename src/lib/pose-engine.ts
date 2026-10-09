@@ -465,7 +465,7 @@ export function analyzePose(
       timestamp,
       poses.length > 1
         ? 'One person at a time. Clear the camera view.'
-        : 'Step into view and keep the required joints visible.',
+        : 'Step back until your head and required joints fit in view. Use even lighting.',
       profile.occlusionGraceMs,
     );
   }

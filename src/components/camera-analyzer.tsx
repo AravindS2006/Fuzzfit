@@ -106,6 +106,7 @@ export function CameraAnalyzer({
   onCameraHeight?: (height: number) => void;
 }) {
   const cameraView = useRef<HTMLDivElement>(null);
+  const displaySize = useRef({ width: 0, height: 0 });
   const video = useRef<HTMLVideoElement>(null),
     canvas = useRef<HTMLCanvasElement>(null),
     worker = useRef<Worker | null>(null),
@@ -514,8 +515,12 @@ export function CameraAnalyzer({
   }, []);
   useEffect(() => {
     const view = cameraView.current;
-    if (!view || !onCameraHeight) return;
-    const update = () => onCameraHeight(view.getBoundingClientRect().height);
+    if (!view) return;
+    const update = () => {
+      const { width, height } = view.getBoundingClientRect();
+      displaySize.current = { width, height };
+      onCameraHeight?.(height);
+    };
     const observer = new ResizeObserver(update);
     observer.observe(view);
     update();
@@ -715,8 +720,10 @@ export function CameraAnalyzer({
                     bitmap,
                     presentFrame: true,
                     timestamp,
-                    width: v.videoWidth,
-                    height: v.videoHeight,
+                    // A camera can rotate or change resolution while capture
+                    // is pending. Geometry must describe this captured image.
+                    width: bitmap.width,
+                    height: bitmap.height,
                   },
                   [bitmap],
                 );
@@ -962,8 +969,12 @@ export function CameraAnalyzer({
       // Present the analyzed image and its landmarks together. A separate live
       // video can otherwise move ahead of inference and make joints look misplaced.
       if (bitmap) ctx.drawImage(bitmap, 0, 0, width, height);
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = '#cbff65';
+      // Camera resolution and visible tile size differ, especially for portrait
+      // phone feeds. Keep markers readable without changing landmark positions.
+      const scale =
+        Math.min(1, displaySize.current.width / width, displaySize.current.height / height) || 1;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       ctx.fillStyle = '#cbff65';
       for (const [a, b] of skeletonConnections) {
         const start = landmarks[a],
@@ -973,14 +984,22 @@ export function CameraAnalyzer({
         ctx.beginPath();
         ctx.moveTo(start.x * width, start.y * height);
         ctx.lineTo(end.x * width, end.y * height);
+        ctx.strokeStyle = '#10171ddd';
+        ctx.lineWidth = 4 / scale;
+        ctx.stroke();
+        ctx.strokeStyle = '#cbff65';
+        ctx.lineWidth = 2 / scale;
         ctx.stroke();
       }
       for (const p of landmarks.slice(11)) {
         if (!p) continue;
         ctx.globalAlpha = p.opacity;
         ctx.beginPath();
-        ctx.arc(p.x * width, p.y * height, 4, 0, Math.PI * 2);
+        ctx.arc(p.x * width, p.y * height, 3 / scale, 0, Math.PI * 2);
         ctx.fill();
+        ctx.strokeStyle = '#10171ddd';
+        ctx.lineWidth = 1 / scale;
+        ctx.stroke();
       }
       ctx.globalAlpha = 1;
     } finally {
@@ -1051,7 +1070,7 @@ export function CameraAnalyzer({
               <Camera size={32} />
             </div>
             <h3>Your workout camera</h3>
-            <p>{profile.cameraCue}. Step back until these joints fit in view.</p>
+            <p>{profile.cameraCue}. Keep your head in view and step back until these joints fit.</p>
             <button
               className="button lime"
               disabled={sessionCamera && !onEnableCamera}
@@ -1389,9 +1408,9 @@ export function CameraAnalyzer({
               <details className="tracking-settings">
                 <summary>Adjust tracking with your coach</summary>
                 <p>
-                  {profile.cameraCue}. Choose the arm or leg you want to track. Your coach can
-                  adjust the range to your movement. Minor form issues lower quality and show a
-                  correction.
+                  {profile.cameraCue}. Keep your head in view. Choose the arm or leg you want to
+                  track. Your coach can adjust the range to your movement. Minor form issues lower
+                  quality and show a correction.
                 </p>
                 <label className="model-quality-field">
                   Tracking quality
