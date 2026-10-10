@@ -1,6 +1,6 @@
 'use client';
 import { readBrowserPreference } from '@/lib/browser-preferences';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
   ArrowLeft,
@@ -36,6 +36,13 @@ import { isHoldExercise } from '@/lib/exercise-profiles';
 import { Avatar, EmptyState, Modal } from './ui';
 import { Presentation, ScreenShareButton } from './meeting-presentation';
 import { VideoDevices, type DevicePreferences } from './video-devices';
+import { CoachMonitor } from './coach-monitor';
+import {
+  CLASSMATE_PAGE_SIZE,
+  cameraQuality,
+  shouldSubscribe,
+  type MediaSubscription,
+} from '@/lib/meeting-policy';
 const CameraAnalyzer = dynamic(() => import('./camera-analyzer').then((m) => m.CameraAnalyzer), {
   ssr: false,
 });
@@ -113,6 +120,18 @@ export function Studio({
   const [deviceBusy, setDeviceBusy] = useState(false);
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [showClassmates, setShowClassmates] = useState(false);
+  const [classmatePage, setClassmatePage] = useState(0);
+  const [visibleCameraIds, setVisibleCameraIds] = useState<string[]>([]);
+  const onVisibleCameras = useCallback(
+    (ids: string[]) =>
+      setVisibleCameraIds((previous) => (previous.join(',') === ids.join(',') ? previous : ids)),
+    [],
+  );
+  const subscriptionPolicy = useRef<MediaSubscription>({
+    isCoach: false,
+    coachId: '',
+    cameraIds: [],
+  });
   const [facing, setFacing] = useState<'user' | 'environment'>('user');
   const room = useRef<Room | null>(null),
     current = useRef(item),
@@ -123,6 +142,41 @@ export function Studio({
     joinGeneration = useRef(0);
   const coach = user.id === item?.coachId;
   current.current = item;
+  const classmates = remote.filter((p) => p.identity !== item?.coachId);
+  const lastClassmatePage = Math.max(0, Math.ceil(classmates.length / CLASSMATE_PAGE_SIZE) - 1);
+  const safeClassmatePage = Math.min(classmatePage, lastClassmatePage);
+  const visibleClassmates = classmates.slice(
+    safeClassmatePage * CLASSMATE_PAGE_SIZE,
+    (safeClassmatePage + 1) * CLASSMATE_PAGE_SIZE,
+  );
+  subscriptionPolicy.current = {
+    isCoach: coach,
+    coachId: item?.coachId || '',
+    focusId: focus,
+    cameraIds: coach
+      ? visibleCameraIds
+      : showClassmates
+        ? visibleClassmates.map((p) => p.identity)
+        : [],
+  };
+  const subscriptionKey = subscriptionPolicy.current.cameraIds.join(',');
+  const syncSubscriptions = useCallback(() => {
+    for (const person of room.current?.remoteParticipants.values() || [])
+      for (const publication of person.trackPublications.values()) {
+        const desired = shouldSubscribe(
+          subscriptionPolicy.current,
+          person.identity,
+          publication.source,
+          publication.isMuted,
+        );
+        if (publication.isDesired !== desired) publication.setSubscribed(desired);
+        if (desired && publication.source === 'camera')
+          publication.setVideoQuality(cameraQuality(subscriptionPolicy.current, person.identity));
+      }
+  }, []);
+  useEffect(() => {
+    syncSubscriptions();
+  }, [connected, coach, item?.coachId, focus, subscriptionKey, syncSubscriptions]);
   useEffect(() => {
     mounted.current = true;
     try {
@@ -312,7 +366,7 @@ export function Studio({
         adaptiveStream: true,
         dynacast: true,
         videoCaptureDefaults: {
-          resolution: { width: 1280, height: 720, frameRate: 30 },
+          resolution: { width: 1280, height: 720, frameRate: 24 },
           deviceId: preferences.cameraId || undefined,
           facingMode: facing,
         },
@@ -321,7 +375,22 @@ export function Studio({
           echoCancellation: true,
           noiseSuppression: true,
         },
-        publishDefaults: { videoSimulcastLayers: [VideoPresets.h180] },
+        publishDefaults: {
+          simulcast: true,
+          videoEncoding: { maxBitrate: coach ? 1_500_000 : 900_000, maxFramerate: 24 },
+          videoSimulcastLayers: [
+            {
+              ...VideoPresets.h180,
+              resolution: VideoPresets.h180.resolution,
+              encoding: { maxBitrate: 120_000, maxFramerate: 12 },
+            },
+            {
+              ...VideoPresets.h360,
+              resolution: VideoPresets.h360.resolution,
+              encoding: { maxBitrate: 350_000, maxFramerate: 20 },
+            },
+          ],
+        },
       });
       if (!mounted.current || joinGeneration.current !== run) {
         await instance.disconnect();
@@ -330,6 +399,7 @@ export function Studio({
       room.current = instance;
       const update = () => {
         if (mounted.current && room.current === instance) {
+          syncSubscriptions();
           setRemote([...instance.remoteParticipants.values()]);
           const track = instance.localParticipant.getTrackPublication(Track.Source.Camera)?.track;
           const mediaTrack = instance.localParticipant.isCameraEnabled
@@ -349,6 +419,9 @@ export function Studio({
       instance
         .on(RoomEvent.ParticipantConnected, update)
         .on(RoomEvent.ParticipantDisconnected, update)
+        .on(RoomEvent.TrackPublished, update)
+        .on(RoomEvent.TrackUnpublished, update)
+        .on(RoomEvent.Reconnected, update)
         .on(RoomEvent.TrackSubscribed, update)
         .on(RoomEvent.TrackUnsubscribed, update)
         .on(RoomEvent.LocalTrackPublished, update)
@@ -372,7 +445,7 @@ export function Studio({
           setMic(false);
         }
       });
-      await instance.connect(credentials.url, credentials.token);
+      await instance.connect(credentials.url, credentials.token, { autoSubscribe: false });
       if (!mounted.current || joinGeneration.current !== run) {
         await instance.disconnect();
         return;
@@ -492,7 +565,7 @@ export function Studio({
     }
   }
   async function send(text: string, kind = 'chat', recipientId?: string) {
-    if (!item || !text.trim()) return;
+    if (!item || !text.trim()) return false;
     setError('');
     try {
       if (demo)
@@ -515,8 +588,10 @@ export function Studio({
       }
       if (kind === 'chat') setDraft('');
       else setCue('');
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Message could not be sent.');
+      return false;
     }
   }
   async function help(requested: boolean, target?: string) {
@@ -580,8 +655,6 @@ export function Studio({
   const lastCue = [...messages]
     .reverse()
     .find((m) => m.kind === 'cue' && (!m.recipientId || m.recipientId === user.id));
-  const count = item.participants.length + 1;
-  const columns = count <= 4 ? 2 : count <= 9 ? 3 : count <= 25 ? 5 : 6;
   return (
     <div
       ref={meetingRef}
@@ -692,127 +765,31 @@ export function Studio({
           <div className={`meeting-stage ${presenting ? 'with-presentation' : ''}`}>
             <Presentation room={connected ? room.current : null} onActive={setPresenting} />
             {coach ? (
-              <div
-                className={`participant-grid meeting-gallery ${count > 9 ? 'scrolling-gallery' : ''}`}
-                style={
-                  {
-                    '--gallery-columns': columns,
-                    '--gallery-rows': Math.ceil(count / columns),
-                    '--mobile-rows': Math.ceil(count / 2),
-                    '--compact-rows': Math.ceil(count / 3),
-                  } as React.CSSProperties
-                }
-                role="group"
-                aria-label="Class video gallery"
-              >
-                {item.participants.map((p, i) => {
-                  const person = remote.find((r) => r.identity === p.id);
-                  const fresh =
-                    p.metric &&
-                    p.metric.revision === item.revision &&
-                    p.metric.exercise === item.exercise &&
-                    !item.paused &&
-                    Date.now() - +new Date(p.metric.updatedAt) < 12000;
-                  return (
-                    <button
-                      key={p.id}
-                      className={`participant-tile meeting-tile ${p.helpRequested ? 'needs-attention' : ''} ${person?.isSpeaking ? 'is-speaking' : ''} ${focus === p.id ? 'selected-trainee' : ''}`}
-                      aria-label={`Focus ${p.name}${p.helpRequested ? ', help requested' : ''}`}
-                      aria-pressed={focus === p.id}
-                      onClick={() => setFocus(focus === p.id ? null : p.id)}
-                    >
-                      <div className="participant-feed">
-                        {person ? (
-                          <ParticipantVideo participant={person} />
-                        ) : (
-                          <div className="meeting-empty-video">
-                            <Avatar name={p.name} index={i} />
-                            <span>{demo ? 'Preview · camera off' : 'Waiting to join'}</span>
-                          </div>
-                        )}
-                        <div className="meeting-tile-top">
-                          {p.helpRequested && (
-                            <span className="help-badge">
-                              <Hand size={14} />
-                              Help requested
-                            </span>
-                          )}
-                          {person?.isSpeaking && <span className="speaking-badge">Speaking</span>}
-                          {focus === p.id && <span className="selected-badge">Selected</span>}
-                        </div>
-                        <div className="meeting-tile-name">
-                          <strong>{p.name}</strong>
-                          {person && <ConnectionBadge participant={person} />}
-                          {person?.isMicrophoneEnabled ? <Mic size={15} /> : <MicOff size={15} />}
-                        </div>
-                      </div>
-                      <div className="participant-stats">
-                        <span>
-                          <strong>
-                            {fresh
-                              ? isHoldExercise(item.exercise)
-                                ? `${p.metric!.holdSeconds}s`
-                                : p.metric!.reps
-                              : '—'}
-                          </strong>{' '}
-                          {isHoldExercise(item.exercise) ? 'hold' : 'reps'}
-                        </span>
-                        <span>
-                          <strong>
-                            {fresh && p.metric?.score != null ? Math.round(p.metric.score) : '—'}
-                          </strong>{' '}
-                          form /100
-                        </span>
-                        <span className="participant-state">
-                          {fresh
-                            ? p.metric!.phase
-                            : item.paused
-                              ? 'Paused'
-                              : demo
-                                ? 'Sample participant'
-                                : 'No tracking'}
-                        </span>
-                      </div>
-                      {fresh && p.metric?.cue && (
-                        <span className="meeting-tile-cue">{p.metric.cue}</span>
-                      )}
-                    </button>
-                  );
-                })}
-                <div
-                  className={`meeting-tile coach-self-tile ${room.current?.localParticipant.isSpeaking ? 'is-speaking' : ''}`}
-                >
-                  <div className="participant-feed">
-                    {connected && camera && room.current ? (
-                      <ParticipantVideo
-                        participant={room.current.localParticipant}
-                        mirror={mirror}
-                      />
-                    ) : (
-                      <div className="meeting-empty-video">
-                        <Avatar name={user.name} />
-                        <span>
-                          {demo
-                            ? 'Preview · no live devices'
-                            : connected
-                              ? 'Camera off'
-                              : 'Join video to coach your class'}
-                        </span>
-                      </div>
-                    )}
-                    <div className="meeting-tile-name">
-                      <strong>
-                        {user.name} <small>(You · Coach)</small>
-                      </strong>
-                      {mic ? <Mic size={15} /> : <MicOff size={15} />}
+              <CoachMonitor
+                item={item}
+                remote={remote}
+                demo={demo}
+                focus={focus}
+                onFocus={setFocus}
+                onVisible={onVisibleCameras}
+                renderVideo={(person) => <ParticipantVideo participant={person} />}
+                renderConnection={(person) => <ConnectionBadge participant={person} />}
+                onCue={(text, recipient) => send(text, 'cue', recipient)}
+                onHelp={(id) => void help(false, id)}
+                onMute={(id) => void muteParticipants(id)}
+                connected={connected}
+                busy={deviceBusy}
+                selfVideo={
+                  connected && camera && room.current ? (
+                    <ParticipantVideo participant={room.current.localParticipant} mirror={mirror} />
+                  ) : (
+                    <div className="meeting-empty-video">
+                      <Avatar name={user.name} />
+                      <span>{demo ? 'Preview · no live devices' : 'Camera off'}</span>
                     </div>
-                  </div>
-                  <div className="participant-stats coach-tile-caption">
-                    <Video size={15} />
-                    <span>Your demonstration is shared with everyone</span>
-                  </div>
-                </div>
-              </div>
+                  )
+                }
+              />
             ) : (
               <div
                 className={`trainee-video-layout coach-video-${coachVideoLayout.size}${coachVideoLayout.minimized ? ' coach-video-minimized' : ''}`}
@@ -1376,17 +1353,32 @@ export function Studio({
       )}
       {showClassmates && !coach && (
         <Modal title="Classmates" onClose={() => setShowClassmates(false)}>
+          <div className="monitor-pagination">
+            <span>
+              {classmates.length} classmates · Page {safeClassmatePage + 1}/{lastClassmatePage + 1}
+            </span>
+            <button
+              disabled={safeClassmatePage === 0}
+              onClick={() => setClassmatePage(safeClassmatePage - 1)}
+            >
+              Previous
+            </button>
+            <button
+              disabled={safeClassmatePage === lastClassmatePage}
+              onClick={() => setClassmatePage(safeClassmatePage + 1)}
+            >
+              Next
+            </button>
+          </div>
           <div className="classmate-gallery">
-            {remote
-              .filter((p) => p.identity !== item.coachId)
-              .map((p) => (
-                <div key={p.identity} className="classmate-feed">
-                  <ParticipantVideo participant={p} />
-                  <span>
-                    {p.name || 'Classmate'} · {p.isMicrophoneEnabled ? 'Mic on' : 'Muted'}
-                  </span>
-                </div>
-              ))}
+            {visibleClassmates.map((p) => (
+              <div key={p.identity} className="classmate-feed">
+                <ParticipantVideo participant={p} />
+                <span>
+                  {p.name || 'Classmate'} · {p.isMicrophoneEnabled ? 'Mic on' : 'Muted'}
+                </span>
+              </div>
+            ))}
             {!remote.some((p) => p.identity !== item.coachId) && (
               <p>No classmates have joined video yet.</p>
             )}

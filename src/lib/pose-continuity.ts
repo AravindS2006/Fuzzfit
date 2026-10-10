@@ -9,6 +9,7 @@ export type PoseContinuityState = {
   candidate: Observation | null;
   candidateSince: number;
   candidateFrames: number;
+  candidateReason: 'landmark-identity' | 'view-change' | null;
   lastReliableAt: number | null;
   timestamp: number | null;
   width: number;
@@ -37,6 +38,7 @@ export function initialPoseContinuity(): PoseContinuityState {
     candidate: null,
     candidateSince: 0,
     candidateFrames: 0,
+    candidateReason: null,
     lastReliableAt: null,
     timestamp: null,
     width: 0,
@@ -238,29 +240,28 @@ export function validatePoseContinuity(
     return result;
   }
   const inverted = identityJump(state.previous, current);
-  if (!inverted && changedView(state.previous.image, current.image)) {
+  const relocated = changedView(state.previous.image, current.image);
+  if (!inverted && !relocated) {
     state.previous = current;
     state.lastReliableAt = timestamp;
     state.candidate = null;
     state.candidateFrames = 0;
-    result.resetRequired = true;
-    result.reason = 'view-change';
+    state.candidateReason = null;
     return result;
   }
-  if (!inverted) {
-    state.previous = current;
-    state.lastReliableAt = timestamp;
-    state.candidate = null;
-    state.candidateFrames = 0;
-    return result;
-  }
-  if (state.candidate && stableObservation(state.candidate, current)) {
+  const reason = inverted ? 'landmark-identity' : 'view-change';
+  if (
+    state.candidate &&
+    state.candidateReason === reason &&
+    stableObservation(state.candidate, current)
+  ) {
     state.candidateFrames++;
   } else {
     state.candidateSince = timestamp;
     state.candidateFrames = 1;
   }
   state.candidate = current;
+  state.candidateReason = reason;
   if (state.candidateFrames >= 3 && timestamp - state.candidateSince >= 120) {
     // A stable observed new orientation is reacquired, never corrected into an
     // assumed old orientation. An in-flight movement must restart from its top.
@@ -269,8 +270,8 @@ export function validatePoseContinuity(
     state.candidate = null;
     state.candidateFrames = 0;
     result.resetRequired = true;
-    result.reason = 'landmark-identity';
+    result.reason = reason;
     return result;
   }
-  return reject('landmark-identity');
+  return reject(reason);
 }

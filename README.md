@@ -35,6 +35,7 @@ npm run build
 npm run start
 # In a second terminal, against the local server:
 npm run test:api
+npm run test:capacity -- 30 20
 npm run test:e2e
 npm run test:a11y
 # Requires the built app; starts an isolated server/database on port 3001:
@@ -46,13 +47,15 @@ The browser test configuration uses an installed Microsoft Edge. Change the chan
 
 ## How camera analysis works
 
-MediaPipe Pose Landmarker Heavy detects 33 landmarks in a worker using local model/WASM assets. Full and Lite remain available; sustained slow Heavy inference switches to Full. GPU initialization or runtime stalls recover through CPU. One-person VIDEO tracking provides native temporal smoothing. Keep a single trainee in view; crowded views are unsupported. Each annotated display pairs the analyzed image with its corresponding landmarks. Workers, bitmaps and owned tracks are released on stop/unmount.
+MediaPipe Pose Landmarker Heavy detects 33 landmarks in a worker using local model/WASM assets. Sustained slow inference switches from Heavy to Full, then to Lite when needed. Analysis is capped at 20 frames/sec with one inference in flight. GPU initialization or runtime stalls recover through CPU. One-person VIDEO tracking provides native temporal smoothing. Abrupt body relocation requires stable reacquisition; isolated limb jumps and relocating uncertain joints are hidden. Keep a single trainee in view; crowded views are unsupported. Each annotated display pairs the analyzed image with its corresponding landmarks. Workers, bitmaps and owned tracks are released on stop/unmount.
 
 The profile-v4 engine uses image/world geometry, confidence gates, stable limb selection, adaptive movement-signal smoothing, exercise profiles, state transitions, hysteresis, range and duration validation, time-weighted form rules, cooldown, and completed-rep quality. It supports squat, push-up, curl, plank, lunge, shoulder press, lateral raise, jumping jack, glute bridge, crunch, row, and side plank. Guided calibration measures confident, stable endpoints with the coach. Five-second hands-free starting tolerates small posture changes and pauses for temporary tracking uncertainty.
 
 Scores estimate visible movement rather than proving safe or perfect technique. Signed-in trainees can save practice history explicitly; live training uses join consent. Set records retain reps/holds, observed active and tracked time, form and rep quality, range, tempo, confidence, rejection counts, and optional reported load. Failed saves queue by account and can be retried without duplicate rows. No calories, heart rate, injury predictions, or body-fat estimates are inferred.
 
 When connected to a class, the trainee analyzes the LiveKit local camera track rather than opening a second camera. Limited summaries are sent every 3 seconds, scoped to that trainee's enrollment and current exercise revision. Coach updates use polling with backoff. Trainee summaries remain private to the trainee and their coach. Video is a consented **group** stream visible to enrolled classmates; the application does not record it.
+
+The coach overview fits up to 36 trainee tiles on desktops, with search, attention filtering, a private detail/cue panel, and pagination for larger classes. Large overviews receive thumbnail video; selecting a trainee promotes their quality. Trainees receive the coach camera by default and optionally view nine classmates at a time. See the [local classroom upgrade and capacity report](docs/CLASSROOM_UPGRADE.md) for HTTP and WebRTC measurements, reproduction steps, and the remaining production/device checks.
 
 ## Documentation
 

@@ -94,6 +94,18 @@ describe('pose visualization independent of exercise scoring', () => {
     expect(drawn.slice(11, 16)).toEqual(Array(5).fill(null));
     expect(drawn[23]).not.toBeNull();
   });
+  it('hides a relocating low-confidence wrist while preserving the torso and reacquiring a reliable wrist', () => {
+    const state = initialPoseOverlay(),
+      points = pose();
+    updatePoseOverlay(state, [points], 0, W, H);
+    points[16].visibility = 0.5;
+    points[16].x = 0.8;
+    const uncertain = updatePoseOverlay(state, [points], 33, W, H);
+    expect(uncertain[16]).toBeNull();
+    expect(uncertain[11]).not.toBeNull();
+    points[16].visibility = 0.95;
+    expect(updatePoseOverlay(state, [points], 66, W, H)[16]?.x).toBe(0.8);
+  });
 
   it('clears the previous person immediately after an empty or ambiguous detection', () => {
     const state = initialPoseOverlay();

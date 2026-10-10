@@ -1,0 +1,347 @@
+{
+  "timestamp": "2026-10-10T06:00:23.342Z",
+  "server": "LiveKit 1.13.7 Windows, localhost",
+  "browserProcesses": 2,
+  "pages": 2,
+  "nativePublishers": 29,
+  "publisher": "One browser canvas using application encoding settings; 29 official LiveKit CLI prerecorded simulcast publishers (no on-host encoding)",
+  "measurementSeconds": 30,
+  "overview": {
+    "streams": [
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.61377085961472,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.5520774336283185
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 15.028248186721395,
+        "kbps": 111.71886907209934,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.4483200883002207
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.58696550744061,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.46845575221238933
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.27007847282788,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.346004424778761
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.66738156396293,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.4833318584070797
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.65570398479798,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.4937389380530973
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.53335480309238,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.5143694690265486
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.22442975427396,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.9622654867256637
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.62651003688558,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.4780000000000001
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.34996373029726,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.5113650442477875
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.54582858083678,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.46643141592920356
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 114.61225470974412,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.4756283185840707
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.48637908690607,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.8576814159292037
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.54742097799563,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.5008849557522123
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.616159455353,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.343393805309735
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.60580887382042,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.4697676991150443
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 12.0093285730533,
+        "kbps": 119.70659862045702,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.49938674033149166
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.73426224463496,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.45793805309734514
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 15.028248186721395,
+        "kbps": 111.60846286908519,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.966662251655629
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.45745053852016,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.45725884955752216
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.42931818871368,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.46106194690265495
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.58192291643756,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.4837013274336282
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.73930483563802,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.46373672566371665
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.31864658617306,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.4666084070796459
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.44550755982873,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.3578738938053094
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.55724076047525,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.0219402654867258
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.60235867997622,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.4871017699115044
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.5299046092482,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.49412389380530974
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.55856775810764,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.5083274336283186
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 14.995073245911856,
+        "kbps": 111.61111686434995,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.5003230088495576
+      }
+    ],
+    "kbps": 3357.5415425015954,
+    "minimumFps": 12.0093285730533,
+    "totalLostPackets": 0,
+    "totalFreezes": 0
+  },
+  "publisherOutput": [
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 12.017009775515392,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 0.798,
+          "cpu": 0,
+          "none": 51.482,
+          "other": 0
+        }
+      }
+    ]
+  ],
+  "performanceTarget": {
+    "minimumPerStreamFps": 10,
+    "maximumFreezes": 0,
+    "met": true
+  },
+  "traineeCameraSubscriptions": [
+    1
+  ],
+  "focusReceivedLargerLayer": true,
+  "realCoachMuteSucceeded": true,
+  "pagedCoachActiveReceivers": 12,
+  "pageErrors": [],
+  "limitations": "All publishers, the coach browser and SFU share one computer. No physical pose inference or WAN impairment. Windows SFU capacity management is unavailable."
+}

@@ -234,11 +234,25 @@ describe('anatomical landmark continuity', () => {
       points = pose();
     observe(state, points, 0);
     const moved = points.map((point) => ({ ...point, y: point.y + 0.3 }));
-    const result = observe(state, moved, 33);
+    expect(observe(state, moved, 33).rejected).toBe(true);
+    expect(observe(state, moved, 99).rejected).toBe(true);
+    const result = observe(state, moved, 165);
     expect(result.rejected).toBe(false);
     expect(result.resetRequired).toBe(true);
     expect(result.reason).toBe('view-change');
     expect(result.poses[0]).toBe(moved);
+  });
+
+  it('rejects a single body relocation and immediately accepts the original body on recovery', () => {
+    const state = initialPoseContinuity(),
+      points = pose();
+    observe(state, points, 0);
+    const outlier = points.map((point) => ({ ...point, y: point.y + 0.3 }));
+    expect(observe(state, outlier, 33).poses).toEqual([]);
+    const recovered = observe(state, points, 66);
+    expect(recovered.rejected).toBe(false);
+    expect(recovered.resetRequired).toBe(false);
+    expect(recovered.poses[0]).toBe(points);
   });
 
   it.each(['gap', 'resolution'] as const)(

@@ -1,4 +1,5 @@
 'use client';
+import { initialJointStability, stabilizePoseJoints } from '@/lib/pose-joints';
 import { useEffect, useRef, useState } from 'react';
 import {
   Camera,
@@ -188,6 +189,8 @@ export function CameraAnalyzer({
   const [saving, setSaving] = useState(false);
   const soundContext = useRef<AudioContext | null>(null);
   const lastVideoTime = useRef(-1);
+  const lastCaptureAt = useRef(0);
+  const jointStability = useRef(initialJointStability());
   configRef.current = config;
   const ownStream = useRef<MediaStream | null>(null),
     currentStream = useRef<MediaStream | null>(null),
@@ -213,6 +216,7 @@ export function CameraAnalyzer({
   function stop() {
     overlayState.current = initialPoseOverlay();
     continuityState.current = initialPoseContinuity();
+    jointStability.current = initialJointStability();
     calibrationRef.current = null;
     setCalibration(null);
     cancelStart();
@@ -440,6 +444,7 @@ export function CameraAnalyzer({
     pauseTrainingMetrics(metrics.current);
     overlayState.current = initialPoseOverlay();
     if (!preserveContinuity) continuityState.current = initialPoseContinuity();
+    jointStability.current = initialJointStability();
     calibrationRef.current = null;
     setCalibration(null);
     canvas.current?.getContext('2d')?.clearRect(0, 0, canvas.current.width, canvas.current.height);
@@ -654,6 +659,7 @@ export function CameraAnalyzer({
         worker.current?.terminate();
         inFlight.current = false;
         lastVideoTime.current = -1;
+        lastCaptureAt.current = 0;
         trackingBackend.current = '';
         recentInferenceMs.current = [];
         if (cpuOnly) {
@@ -710,11 +716,17 @@ export function CameraAnalyzer({
                 inFlight.current ||
                 pausedRef.current ||
                 document.hidden ||
+                performance.now() - lastCaptureAt.current < 50 ||
                 lastVideoTime.current === v.currentTime
               )
                 return;
               lastVideoTime.current = v.currentTime;
               const timestamp = performance.now();
+              // Advance the sampling clock rather than resetting it to every
+              // camera frame. A 24 FPS camera would otherwise be halved to
+              // 12 FPS by a strict 50 ms gap; this keeps the average at 20 FPS.
+              lastCaptureAt.current =
+                timestamp - lastCaptureAt.current > 100 ? timestamp : lastCaptureAt.current + 50;
               inFlight.current = true;
               try {
                 const bitmap = await createImageBitmap(v);
@@ -754,7 +766,7 @@ export function CameraAnalyzer({
             const now = performance.now();
             if (Number.isFinite(data.inferenceMs) && data.inferenceMs >= 0) {
               recentInferenceMs.current.push(data.inferenceMs);
-              if (recentInferenceMs.current.length > 5) recentInferenceMs.current.shift();
+              if (recentInferenceMs.current.length > 20) recentInferenceMs.current.shift();
             }
             const meanInferenceMs =
               recentInferenceMs.current.reduce((sum, ms) => sum + ms, 0) /
@@ -762,15 +774,18 @@ export function CameraAnalyzer({
             // Heavy at 6–9 FPS can miss short exercise endpoints despite clearer
             // individual frames. Keep it only when it meets a 100 ms frame budget.
             if (
-              modelVariantRef.current === 'heavy' &&
-              recentInferenceMs.current.length === 5 &&
+              modelVariantRef.current !== 'lite' &&
+              recentInferenceMs.current.length >= (modelVariantRef.current === 'heavy' ? 5 : 20) &&
               meanInferenceMs > 100
             ) {
               data.bitmap?.close();
-              modelVariantRef.current = 'full';
-              setModelVariant('full');
+              const next = modelVariantRef.current === 'heavy' ? 'full' : 'lite';
+              modelVariantRef.current = next;
+              setModelVariant(next);
               setQualityNotice(
-                'Switched to the Full model for smoother real-time movement tracking. Your completed reps are retained.',
+                next === 'full'
+                  ? 'Switched to the Full model for smoother real-time movement tracking. Your completed reps are retained.'
+                  : 'Switched to Lite to keep up with movement on this device. Use good lighting and confirm technique with your coach. Your completed reps are retained.',
               );
               invalidateTracking(
                 'Hold your starting position while tracking adapts to this device.',
@@ -812,8 +827,16 @@ export function CameraAnalyzer({
             );
             if (observation.resetRequired)
               invalidateTracking('Body tracking changed. Return to your starting position.', true);
-            const result = analyzePose(
+            const stable = stabilizePoseJoints(
+              jointStability.current,
               observation.poses,
+              observation.worldPoses,
+              data.timestamp,
+              data.width,
+              data.height,
+            );
+            const result = analyzePose(
+              stable.poses,
               exerciseRef.current,
               activeSet ? state.current : previewState.current,
               data.timestamp,
@@ -821,12 +844,14 @@ export function CameraAnalyzer({
               data.height,
               pausedRef.current,
               configRef.current,
-              observation.worldPoses,
+              stable.worldPoses,
             );
-            if (observation.rejected && observation.reason === 'landmark-identity') {
+            if (observation.rejected) {
               result.phase = 'reacquiring body tracking';
               result.cue =
-                'Left/right tracking is uncertain. Hold your position while tracking settles.';
+                observation.reason === 'landmark-identity'
+                  ? 'Left/right tracking is uncertain. Hold your position while tracking settles.'
+                  : 'Body position changed abruptly. Hold your position while tracking settles.';
             }
             if (calibrationRef.current) {
               const measured = advanceMovementCalibration(
@@ -935,7 +960,7 @@ export function CameraAnalyzer({
             draw(
               updatePoseOverlay(
                 overlayState.current,
-                observation.poses,
+                stable.poses,
                 data.timestamp,
                 data.width,
                 data.height,

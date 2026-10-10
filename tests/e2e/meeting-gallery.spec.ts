@@ -2,10 +2,11 @@ import { expect, test } from '@playwright/test';
 import { PrismaClient } from '@prisma/client';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
+import AxeBuilder from '@axe-core/playwright';
 
 process.loadEnvFile('.env');
 
-for (const traineeCount of [8, 24]) {
+for (const traineeCount of [8, 30, 48]) {
   test(`${traineeCount} trainees are accessible on phones, laptops, and TVs`, async ({ page }) => {
     test.setTimeout(60000);
     const fixtureId = randomUUID();
@@ -89,8 +90,18 @@ for (const traineeCount of [8, 24]) {
       );
       await expect(tiles[0].locator('.participant-stats')).toContainText('5');
       await expect(tiles[0].locator('.participant-stats')).toContainText('83');
-      await expect(tiles[traineeCount - 1]).toContainText('Help requested');
-      const cameraTiles = [...tiles, page.locator('.coach-self-tile')];
+      if (traineeCount <= 36) await expect(tiles[traineeCount - 1]).toContainText('Help requested');
+      const visibleCount = Math.min(traineeCount, 36);
+      const cameraTiles = tiles.slice(0, visibleCount);
+      if (traineeCount > 36) {
+        await expect(page.locator('.participant-grid .participant-tile')).toHaveCount(36);
+        await page.getByRole('button', { name: 'Next trainees' }).click();
+        await expect(tiles[traineeCount - 1]).toBeVisible();
+        await expect(page.locator('.participant-grid .participant-tile')).toHaveCount(
+          traineeCount - 36,
+        );
+        await page.getByRole('button', { name: 'Previous trainees' }).click();
+      }
       for (const viewport of [
         { width: 320, height: 568 },
         { width: 390, height: 844 },
@@ -99,10 +110,14 @@ for (const traineeCount of [8, 24]) {
         { width: 3840, height: 2160 },
       ]) {
         await page.setViewportSize(viewport);
-        await expect(page.locator('.participant-grid .participant-tile')).toHaveCount(traineeCount);
-        await expect(page.locator('.participant-grid .meeting-tile')).toHaveCount(traineeCount + 1);
-        await tiles[traineeCount - 1].click();
-        await expect(tiles[traineeCount - 1]).toHaveAttribute('aria-pressed', 'true');
+        await expect(page.locator('.participant-grid .participant-tile')).toHaveCount(visibleCount);
+        await expect(page.locator('.participant-grid .meeting-tile')).toHaveCount(visibleCount);
+        await tiles[visibleCount - 1].click();
+        await expect(tiles[visibleCount - 1]).toHaveAttribute('aria-pressed', 'true');
+        await expect(
+          page.getByRole('complementary', { name: 'Selected trainee details' }),
+        ).toBeVisible();
+        await page.getByRole('button', { name: 'Close trainee details' }).click();
         if (traineeCount > 8) {
           await page.locator('.meeting-gallery .meeting-tile').last().scrollIntoViewIfNeeded();
           const geometry = await page.locator('.meeting-gallery').evaluate((element) => ({
@@ -115,12 +130,17 @@ for (const traineeCount of [8, 24]) {
             classes: element.className,
           }));
           await mkdir('docs/screenshots', { recursive: true });
-          await page.screenshot({ path: `docs/screenshots/gallery-24-${viewport.width}.png` });
+          await page.screenshot({
+            path: `docs/screenshots/gallery-${traineeCount}-${viewport.width}.png`,
+          });
           if (geometry.scrollHeight > geometry.clientHeight)
             expect(geometry.scrollTop, JSON.stringify({ viewport, ...geometry })).toBeGreaterThan(
               0,
             );
-          if (viewport.width === 3840) {
+          if (viewport.width >= 951) {
+            expect(geometry.scrollHeight).toBeLessThanOrEqual(geometry.clientHeight + 1);
+          }
+          if (viewport.width === 3840 && traineeCount <= 30) {
             const gallery = await page.locator('.meeting-gallery').boundingBox();
             const lastTile = await page
               .locator('.meeting-gallery .meeting-tile')
@@ -137,9 +157,9 @@ for (const traineeCount of [8, 24]) {
           const box = await tile.boundingBox();
           expect(box, `tile is rendered at ${viewport.width}×${viewport.height}`).not.toBeNull();
           expect(box!.x).toBeGreaterThanOrEqual(-1);
-          if (traineeCount === 8) expect(box!.y).toBeGreaterThanOrEqual(-1);
+          if (viewport.width >= 951) expect(box!.y).toBeGreaterThanOrEqual(-1);
           expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
-          if (traineeCount === 8)
+          if (viewport.width >= 951)
             expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1);
           else expect(box!.height).toBeGreaterThanOrEqual(100);
         }
@@ -150,9 +170,27 @@ for (const traineeCount of [8, 24]) {
         expect(dock).not.toBeNull();
         expect(dock!.y + dock!.height).toBeLessThanOrEqual(viewport.height + 1);
         // Changing the recipient preserves the entire gallery instead of replacing it with one tile.
-        await tiles[traineeCount - 1].click();
-        await expect(tiles[traineeCount - 1]).toHaveAttribute('aria-pressed', 'false');
+        await expect(tiles[visibleCount - 1]).toHaveAttribute('aria-pressed', 'false');
       }
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.getByLabel('Find a trainee').fill(traineeNames[traineeCount - 1]);
+      await expect(page.locator('.participant-grid .participant-tile')).toHaveCount(1);
+      await tiles[traineeCount - 1].click();
+      await page.getByLabel('Private coaching cue').fill('Keep your movement controlled.');
+      await page.getByRole('button', { name: 'Send private cue', exact: true }).click();
+      await expect(page.getByLabel('Private coaching cue')).toHaveValue('');
+      const savedCue = await db.message.findFirst({
+        where: { classId: session.id, recipientId: traineeIds[traineeCount - 1] },
+      });
+      expect(savedCue?.text).toBe('Keep your movement controlled.');
+      await page.getByRole('button', { name: 'Mark help addressed' }).click();
+      await expect(page.getByRole('button', { name: 'Mark help addressed' })).toHaveCount(0);
+      const accessibility = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21aa'])
+        .analyze();
+      expect(
+        accessibility.violations.map((v) => ({ id: v.id, targets: v.nodes.map((n) => n.target) })),
+      ).toEqual([]);
     } finally {
       const coach = await db.user.findUnique({ where: { email }, select: { id: true } });
       const ids = coach ? [coach.id, ...traineeIds] : traineeIds;

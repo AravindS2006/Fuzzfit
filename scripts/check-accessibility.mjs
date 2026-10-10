@@ -57,7 +57,7 @@ await page.getByText('ILLUSTRATIVE STUDIO PREVIEW', { exact: true }).waitFor();
 await scan('/demo + live studio');
 await page.getByRole('button', { name: 'Coach tools' }).click();
 await scan('/demo + coach tools');
-await page.getByLabel('Coaching cue').fill('Keep this movement controlled.');
+await page.getByLabel('Coaching cue', { exact: true }).fill('Keep this movement controlled.');
 await page.getByRole('button', { name: 'Send class cue' }).click();
 await page.getByRole('button', { name: 'Close dialog' }).click();
 await page.getByRole('button', { name: 'Chat', exact: true }).click();

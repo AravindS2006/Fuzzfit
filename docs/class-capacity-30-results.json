@@ -1,0 +1,30 @@
+{
+  "createdAt": "2026-10-10T05:14:26.966Z",
+  "clients": 30,
+  "rounds": 20,
+  "durationSeconds": 60,
+  "scope": "Local HTTP/auth/database summary load; does not measure WebRTC, WAN latency, or physical-camera pose accuracy.",
+  "endpoints": {
+    "metrics": {
+      "requests": 600,
+      "failures": 0,
+      "p50Ms": 24,
+      "p95Ms": 43,
+      "maxMs": 292
+    },
+    "trainee-poll": {
+      "requests": 600,
+      "failures": 0,
+      "p50Ms": 11,
+      "p95Ms": 20,
+      "maxMs": 127
+    },
+    "coach-poll": {
+      "requests": 20,
+      "failures": 0,
+      "p50Ms": 47,
+      "p95Ms": 70,
+      "maxMs": 70
+    }
+  }
+}

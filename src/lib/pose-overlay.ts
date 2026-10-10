@@ -79,6 +79,17 @@ export function updatePoseOverlay(
     }
     const rawX = (point.x * width) / scale;
     const rawY = (point.y * height) / scale;
+    // A barely visible joint must not teleport the displayed skeleton. Keep
+    // normal confidence hysteresis for small motion, but require reacquisition
+    // when an uncertain landmark suddenly relocates.
+    if (
+      previous &&
+      confidence < 0.65 &&
+      Math.hypot(rawX - previous.x.raw, rawY - previous.y.raw) > 0.08
+    ) {
+      state.joints[index] = undefined;
+      return null;
+    }
     const anchor = [11, 12, 23, 24].includes(index);
     // The torso should not respond to prediction noise as aggressively as fast
     // wrists/ankles. Anatomical identity is validated before this display filter.

@@ -33,7 +33,7 @@ test('sample studio supports navigation, plan edits, scheduling, and an isolated
   await expect(page.getByText('ILLUSTRATIVE STUDIO PREVIEW')).toBeVisible();
   await expect(page.getByRole('button', { name: /^Focus Ava Thompson/ })).toBeVisible();
   await page.getByRole('button', { name: 'Coach tools', exact: true }).click();
-  await page.getByLabel('Coaching cue').fill('Move under control.');
+  await page.getByLabel('Coaching cue', { exact: true }).fill('Move under control.');
   await page.getByRole('button', { name: 'Send class cue' }).click();
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
   await page.getByRole('button', { name: 'Chat', exact: true }).click();
@@ -159,10 +159,10 @@ for (const viewport of [
     await expect(tiles[0]).toHaveAttribute('aria-pressed', 'true');
     await expectGalleryFits();
     await page.getByRole('button', { name: 'Coach tools', exact: true }).click();
-    await expect(page.getByLabel('Coaching cue')).toBeVisible();
+    await expect(page.getByLabel('Coaching cue', { exact: true })).toBeVisible();
     await expectGalleryFits();
     await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
-    await expect(page.getByLabel('Coaching cue')).toHaveCount(0);
+    await expect(page.getByLabel('Coaching cue', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Coach tools', exact: true })).toBeFocused();
     await page.getByRole('button', { name: 'Chat', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Session conversation' })).toBeVisible();

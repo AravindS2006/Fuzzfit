@@ -16,6 +16,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:api": "node scripts/test-api.mjs",
+    "test:capacity": "node scripts/test-class-capacity.mjs",
+    "test:media": "node scripts/test-media-capacity.mjs",
     "test:e2e": "playwright test",
     "test:email-disabled": "node scripts/test-email-modes.mjs disabled",
     "test:signup": "node scripts/test-email-modes.mjs test",

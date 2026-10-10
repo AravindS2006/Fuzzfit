@@ -4,6 +4,7 @@ for (const failure of [
   'GPU initialization stall',
   'slow Heavy inference',
   'borderline Heavy inference',
+  'slow Full inference',
 ] as const) {
   test(`${failure} recovers without replacing the camera`, async () => {
     test.setTimeout(60000);
@@ -47,7 +48,9 @@ for (const failure of [
               )
             : source.replace(
                 'inferenceMs: performance.now() - started,',
-                `inferenceMs: variant === 'heavy' ? ${failure === 'borderline Heavy inference' ? 150 : 250} : performance.now() - started,`,
+                failure === 'slow Full inference'
+                  ? "inferenceMs: variant !== 'lite' ? 150 : performance.now() - started,"
+                  : `inferenceMs: variant === 'heavy' ? ${failure === 'borderline Heavy inference' ? 150 : 250} : performance.now() - started,`,
               ),
       });
     });
@@ -79,13 +82,16 @@ for (const failure of [
         .toMatchObject(
           failure === 'GPU initialization stall'
             ? { starts: 2, variant: 'heavy', delegate: 'CPU' }
-            : { variant: 'full', delegate: expect.stringMatching(/^(GPU|CPU)$/) },
+            : {
+                variant: failure === 'slow Full inference' ? 'lite' : 'full',
+                delegate: expect.stringMatching(/^(GPU|CPU)$/),
+              },
         );
       const starts = await page.evaluate(
         () => (window as unknown as { recovery: { starts: number } }).recovery.starts,
       );
       expect(starts).toBeGreaterThanOrEqual(2);
-      expect(starts).toBeLessThanOrEqual(3);
+      expect(starts).toBeLessThanOrEqual(failure === 'slow Full inference' ? 4 : 3);
       await expect(
         page.getByText(
           'Step back until your head and required joints fit in view. Use even lighting.',
@@ -250,12 +256,15 @@ test('a stalled GPU inference recovers through a real CPU worker without replaci
         'Step back until your head and required joints fit in view. Use even lighting.',
       ),
     ).toBeVisible({ timeout: 20000 });
-    expect(
-      await page.evaluate(
-        () =>
-          (window as unknown as { poseRecovery: { starts: number; backend: string } }).poseRecovery,
-      ),
-    ).toEqual({ starts: 2, backend: 'CPU' });
+    const recovery = await page.evaluate(
+      () =>
+        (window as unknown as { poseRecovery: { starts: number; backend: string } }).poseRecovery,
+    );
+    expect(recovery.backend).toBe('CPU');
+    // After the GPU recovery, slow devices can also step down Heavy → Full → Lite.
+    // Those bounded model changes preserve the CPU backend and the camera.
+    expect(recovery.starts).toBeGreaterThanOrEqual(2);
+    expect(recovery.starts).toBeLessThanOrEqual(4);
     expect(
       await page.evaluate(() => {
         const camera = (window as unknown as { originalCamera: MediaStream }).originalCamera;
@@ -268,7 +277,7 @@ test('a stalled GPU inference recovers through a real CPU worker without replaci
     await expect(page.getByTestId('cumulative-reps')).toHaveText('00');
     await page.getByRole('button', { name: 'Workout settings', exact: true }).click();
     await page.getByText('Adjust tracking with your coach', { exact: true }).click();
-    await expect(page.getByText(/Tracking: (heavy|full) · CPU/)).toBeVisible();
+    await expect(page.getByText(/Tracking: (heavy|full|lite) · CPU/)).toBeVisible();
     await page.getByRole('button', { name: 'Close dialog' }).click();
     await page.getByRole('button', { name: 'Stop local camera analysis' }).click();
     expect(await page.evaluate(() => document.querySelector('video')?.srcObject)).toBeNull();

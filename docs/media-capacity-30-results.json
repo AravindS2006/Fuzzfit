@@ -1,0 +1,811 @@
+{
+  "timestamp": "2026-10-10T05:58:31.258Z",
+  "server": "LiveKit 1.13.7 Windows, localhost",
+  "browserProcesses": 2,
+  "pages": 31,
+  "nativePublishers": 0,
+  "publisher": "Synthetic 720p/24 FPS moving canvas, matching application simulcast settings; separate publisher browser with software encoding/decoding",
+  "measurementSeconds": 30,
+  "overview": {
+    "streams": [
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 9.4307770861749,
+        "kbps": 113.9398788765804,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.9255909090909089
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 9.4307770861749,
+        "kbps": 114.36644017863199,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.9271433566433567
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 7.452292382781565,
+        "kbps": 118.63258079506893,
+        "lostPackets": 0,
+        "freezes": 1,
+        "frozenSeconds": 0.34299999999999997,
+        "decodeMsPerFrame": 1.086880530973451
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 6.924696461876675,
+        "kbps": 114.69196686183031,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.0320142857142856
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 9.331852851005234,
+        "kbps": 109.9108926265902,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.934946996466431
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 9.595650811457677,
+        "kbps": 114.0385393137896,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.9356563573883162
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 9.19995387077901,
+        "kbps": 112.56338111893953,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.9187849462365594
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 9.66160030157079,
+        "kbps": 115.50393698410294,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.0114402730375427
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 6.594949011311119,
+        "kbps": 111.7126326964804,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.007625
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 10.288120457645345,
+        "kbps": 118.08889319857643,
+        "lostPackets": 0,
+        "freezes": 1,
+        "frozenSeconds": 0.345,
+        "decodeMsPerFrame": 0.9650865384615384
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 6.825772226707008,
+        "kbps": 115.79886310388876,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.0188405797101447
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 6.792797481650452,
+        "kbps": 116.39029813122315,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.0702815533980583
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 9.463751831231455,
+        "kbps": 118.349261785543,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.9669756097560975
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 5.704630894784118,
+        "kbps": 78.11664344305929,
+        "lostPackets": 0,
+        "freezes": 2,
+        "frozenSeconds": 1.067,
+        "decodeMsPerFrame": 1.020965317919075
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 6.232226815689007,
+        "kbps": 110.59307415232021,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.054693121693122
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 6.858746971763564,
+        "kbps": 112.33598727702952,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.0042067307692306
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 9.1340043806659,
+        "kbps": 115.66406234609757,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.0043754512635379
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 9.265903360892121,
+        "kbps": 115.70811660549312,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.961544483985765
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 7.518241872894675,
+        "kbps": 116.70922986541015,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.9832631578947368
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 6.792797481650452,
+        "kbps": 110.12430517659622,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.0188106796116507
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 9.7275497916839,
+        "kbps": 115.2889416463342,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.911176271186441
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 6.858746971763564,
+        "kbps": 112.00175526113628,
+        "lostPackets": 0,
+        "freezes": 1,
+        "frozenSeconds": 0.4299999999999997,
+        "decodeMsPerFrame": 1.0627307692307695
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 9.397802341118345,
+        "kbps": 113.92879936224139,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.000905263157895
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 9.760524536740455,
+        "kbps": 114.31974793963191,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.9287499999999999
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 6.924696461876675,
+        "kbps": 112.06480297368442,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.0169285714285714
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 12.002807200586236,
+        "kbps": 115.69255252582644,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.9344725274725274
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 10.354069947758456,
+        "kbps": 119.58884840170904,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.9304140127388536
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 10.25514571258879,
+        "kbps": 119.86636385610501,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 0.983096463022508
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 7.122544932216008,
+        "kbps": 109.24664936217094,
+        "lostPackets": 0,
+        "freezes": 0,
+        "frozenSeconds": 0,
+        "decodeMsPerFrame": 1.0238055555555556
+      },
+      {
+        "width": 320,
+        "height": 180,
+        "fps": 6.5619742662545635,
+        "kbps": 114.9916413449043,
+        "lostPackets": 0,
+        "freezes": 1,
+        "frozenSeconds": 0.519,
+        "decodeMsPerFrame": 1.0204020100502513
+      }
+    ],
+    "kbps": 3400.2290872109957,
+    "minimumFps": 5.704630894784118,
+    "totalLostPackets": 0,
+    "totalFreezes": 6
+  },
+  "publisherOutput": [
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 7.4304560764176735,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 3.912,
+          "cpu": 0,
+          "none": 75.052,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 9.155210582785054,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 0.46,
+          "cpu": 0,
+          "none": 77.865,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 9.450665357186004,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 0.514,
+          "cpu": 0,
+          "none": 77.266,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 6.187154359611239,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 3.701,
+          "cpu": 0,
+          "none": 73.597,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 9.635147281899947,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 0.416,
+          "cpu": 0,
+          "none": 76.245,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 6.774036776487354,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 3.717,
+          "cpu": 0,
+          "none": 72.216,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 9.30229381820896,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 4.033,
+          "cpu": 0,
+          "none": 70.844,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 6.788933083618668,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 0.099,
+          "cpu": 0,
+          "none": 73.575,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 10.263105590265665,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 1.649,
+          "cpu": 0,
+          "none": 70.602,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 6.820256224084117,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 5.185,
+          "cpu": 0,
+          "none": 65.882,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 9.714856581449855,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 3.73,
+          "cpu": 0,
+          "none": 66.049,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 7.094408279157173,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 3.86,
+          "cpu": 0,
+          "none": 64.662,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 10.352895302316508,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 1.562,
+          "cpu": 0,
+          "none": 65.543,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 6.795061934105337,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 1.457,
+          "cpu": 0,
+          "none": 64.408,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 9.742646839473254,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 3.283,
+          "cpu": 0,
+          "none": 60.782,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 6.872531258587871,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 3.889,
+          "cpu": 0,
+          "none": 58.317,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 9.240843804486122,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 0.202,
+          "cpu": 0,
+          "none": 60.149,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 7.536745793724853,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 0.723,
+          "cpu": 0,
+          "none": 57.664,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 9.388084020155896,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 0.316,
+          "cpu": 0,
+          "none": 56.158,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 6.877436094561135,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 4.859,
+          "cpu": 0,
+          "none": 49.789,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 9.371532094966406,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 0.332,
+          "cpu": 0,
+          "none": 52.506,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 6.885349916630284,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 5.056,
+          "cpu": 0,
+          "none": 45.726,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 10.26168669030668,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 4.112,
+          "cpu": 0,
+          "none": 44.928,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 6.621164792212945,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 5.273,
+          "cpu": 0,
+          "none": 41.983,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 9.406113609916405,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 5.454,
+          "cpu": 0,
+          "none": 40.04,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 6.521171001744337,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 1.199,
+          "cpu": 0,
+          "none": 42.549,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 9.640917153695932,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 0.788,
+          "cpu": 0,
+          "none": 41.195,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 5.732014745822935,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 5.481,
+          "cpu": 0,
+          "none": 34.861,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 9.352812354571906,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 4.36,
+          "cpu": 0,
+          "none": 34.316,
+          "other": 0
+        }
+      }
+    ],
+    [
+      {
+        "rid": "q",
+        "width": 320,
+        "height": 180,
+        "fps": 12.012617292038223,
+        "qualityLimitationReason": "none",
+        "qualityLimitationDurations": {
+          "bandwidth": 0.116,
+          "cpu": 0,
+          "none": 36.62,
+          "other": 0
+        }
+      }
+    ]
+  ],
+  "performanceTarget": {
+    "minimumPerStreamFps": 10,
+    "maximumFreezes": 0,
+    "met": false
+  },
+  "traineeCameraSubscriptions": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "focusReceivedLargerLayer": true,
+  "realCoachMuteSucceeded": true,
+  "pagedCoachActiveReceivers": 12,
+  "pageErrors": [],
+  "limitations": "All publishers, the coach browser and SFU share one computer. No physical pose inference or WAN impairment. Windows SFU capacity management is unavailable."
+}

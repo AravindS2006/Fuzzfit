@@ -77,6 +77,10 @@ export function safeError(error: unknown) {
       event: 'api_error',
       requestId,
       type: error instanceof Error ? error.name : 'unknown',
+      code:
+        error instanceof Error && 'code' in error && /^P\d{4}$/.test(String(error.code))
+          ? String(error.code)
+          : undefined,
     }),
   );
   return NextResponse.json(
