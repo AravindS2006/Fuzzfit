@@ -13,6 +13,25 @@ const pose = (): Landmark[] =>
   }));
 
 describe('pose visualization independent of exercise scoring', () => {
+  it.each([10, 30, 60])(
+    'suppresses shoulder and hip jitter at %i FPS without freezing movement',
+    (fps) => {
+      const state = initialPoseOverlay();
+      const points = pose();
+      const errors: number[] = [];
+      for (let frame = 0; frame < 120; frame++) {
+        for (const index of [11, 12, 23, 24]) points[index].x = 0.5 + (frame % 2 ? 12 : -12) / W;
+        const drawn = updatePoseOverlay(state, [points], (frame * 1000) / fps, W, H);
+        if (frame > 20) errors.push(Math.abs(drawn[11]!.x - 0.5) * W);
+      }
+      expect(errors.reduce((sum, value) => sum + value, 0) / errors.length).toBeLessThan(6);
+      points[11].x = 0.6;
+      const moved = updatePoseOverlay(state, [points], 120000 / fps, W, H)[11]!;
+      expect(moved.x).toBeGreaterThan(0.58);
+      expect(Math.abs(moved.x - points[11].x) * W).toBeLessThanOrEqual(14.401);
+    },
+  );
+
   it.each([10, 30, 60])('reduces stationary joint jitter at %i FPS', (fps) => {
     const state = initialPoseOverlay();
     const points = pose();

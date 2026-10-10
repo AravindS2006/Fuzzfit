@@ -1,5 +1,7 @@
 import { chromium, expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { PrismaClient } from '@prisma/client';
+import { randomBytes, randomUUID } from 'node:crypto';
 
 import {
   addPoseFixture,
@@ -7,6 +9,172 @@ import {
   moveThroughAngles,
   type PoseFixture,
 } from './support/pose-fixture';
+
+process.loadEnvFile('.env');
+
+test('pausing cancels calibration and pending movement while retaining completed repetitions', async () => {
+  test.setTimeout(60000);
+  const browser = await chromium.launch({
+    channel: 'msedge',
+    args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
+  });
+  const address = () =>
+    `2001:db8:${randomBytes(2).toString('hex')}:${randomBytes(2).toString('hex')}::1`;
+  const coachAddress = address();
+  const traineeAddress = address();
+  const coach = await browser.newContext({
+    extraHTTPHeaders: { 'x-forwarded-for': coachAddress },
+  });
+  const trainee = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    extraHTTPHeaders: { 'x-forwarded-for': traineeAddress },
+  });
+  const page = await trainee.newPage();
+  const db = new PrismaClient();
+  const fixtureId = randomUUID();
+  const coachEmail = `pause-coach-${fixtureId}@example.test`;
+  const traineeEmail = `pause-trainee-${fixtureId}@example.test`;
+  const origin = 'http://localhost:3000';
+  const headers = { Origin: origin };
+  try {
+    for (const [request, name, email, role] of [
+      [coach.request, 'Pause Coach', coachEmail, 'coach'],
+      [trainee.request, 'Pause Trainee', traineeEmail, 'trainee'],
+    ] as const) {
+      const signup = await request.post(`${origin}/api/auth/sign-up/email`, {
+        headers,
+        data: { name, email, password: 'Local-Integration-Only-12345' },
+      });
+      expect(signup.ok()).toBe(true);
+      const setup = await request.post(`${origin}/api/command`, {
+        headers,
+        data: { action: 'onboard', name, role, adult: true },
+      });
+      expect(setup.ok()).toBe(true);
+    }
+    const invite = await coach.request.post(`${origin}/api/command`, {
+      headers,
+      data: { action: 'invite', email: traineeEmail },
+    });
+    expect(invite.ok()).toBe(true);
+    const accepted = await trainee.request.post(`${origin}/api/command`, {
+      headers,
+      data: { action: 'acceptInvite', code: (await invite.json()).code },
+    });
+    expect(accepted.ok()).toBe(true);
+    const traineeUser = await db.user.findUniqueOrThrow({ where: { email: traineeEmail } });
+    const created = await coach.request.post(`${origin}/api/command`, {
+      headers,
+      data: {
+        action: 'createClass',
+        title: 'Safe pause and calibration',
+        startsAt: new Date(Date.now() + 3600000).toISOString(),
+        duration: 30,
+        capacity: 2,
+        participantIds: [traineeUser.id],
+      },
+    });
+    expect(created.ok()).toBe(true);
+    const session = await created.json();
+    async function control(value: 'start' | 'pause' | 'resume') {
+      const result = await coach.request.post(`${origin}/api/command`, {
+        headers,
+        data: { action: 'classControl', id: session.id, control: value },
+      });
+      expect(result.ok()).toBe(true);
+    }
+    await control('start');
+    await addPoseFixture(page);
+    await page.goto(`/studio/${session.id}`);
+    await changePose(page, { poseAngle: 170 });
+    await page.getByRole('button', { name: 'Enable camera', exact: true }).click();
+    await expect(page.getByText('Pose detected', { exact: true })).toBeVisible();
+    const analyzer = page.locator('.camera-analyzer');
+    await analyzer.evaluate((node, id) => node.setAttribute('data-pause-fixture', id), fixtureId);
+    const reps = page.getByTestId('cumulative-reps');
+    const settings = page.getByRole('button', { name: 'Workout settings', exact: true });
+    const start = page.getByRole('button', { name: 'Start set', exact: true });
+    const cancelCalibration = page.getByRole('button', { name: 'Cancel calibration', exact: true });
+
+    await settings.click();
+    await page.getByLabel('Reps per set').fill('3');
+    await page.getByRole('button', { name: 'Calibrate movement with your coach' }).click();
+    await expect(cancelCalibration).toBeVisible();
+    await expect(page.locator('.analyzer-cue')).toContainText('comfortable end position');
+    await control('pause');
+    // Exercise and revision remain unchanged. This exercises the pause lifecycle,
+    // rather than passing because a different exercise remounts the analyzer.
+    await expect(cancelCalibration).toHaveCount(0);
+    await expect(start).toBeDisabled();
+    await expect(reps).toHaveText('00');
+    await expect(analyzer).toHaveAttribute('data-pause-fixture', fixtureId);
+    expect(await page.evaluate(() => (window as unknown as PoseFixture).drawnPoseJoints)).toBe(0);
+    await control('resume');
+    await expect(start).toBeEnabled();
+    await expect(cancelCalibration).toHaveCount(0);
+    await settings.click();
+    await page.getByText('Adjust tracking with your coach', { exact: true }).click();
+    await expect(page.getByLabel('Higher endpoint (°)')).toHaveValue('155');
+    await expect(page.getByLabel('Lower endpoint (°)')).toHaveValue('112');
+    await page.getByRole('button', { name: 'Close dialog' }).click();
+
+    await changePose(page, { poseAngle: 180 });
+    await start.click();
+    const pause = page.getByRole('button', { name: 'Pause set', exact: true });
+    const resume = page.getByRole('button', { name: 'Resume set', exact: true });
+    await expect(pause).toBeVisible();
+    async function lower() {
+      await moveThroughAngles(page, [165, 145, 125, 105, 95]);
+      await expect(page.locator('.phase-text')).toHaveText('lowered');
+      await page.waitForTimeout(650);
+    }
+    async function extend() {
+      await moveThroughAngles(page, [105, 125, 145, 165, 180]);
+    }
+    await lower();
+    await extend();
+    await expect(reps).toHaveText('01');
+    await lower();
+    await pause.click();
+    await expect(resume).toBeVisible();
+    await expect(reps).toHaveText('01');
+    expect(await page.evaluate(() => (window as unknown as PoseFixture).drawnPoseJoints)).toBe(0);
+    await resume.click();
+    await expect(pause).toBeVisible();
+    await expect(page.locator('.phase-text')).toHaveText('find start position');
+    // Returning from the pre-pause bottom cannot complete the discarded rep.
+    await extend();
+    await expect(page.locator('.phase-text')).toHaveText('start position');
+    await expect(reps).toHaveText('01');
+    await lower();
+    await extend();
+    await expect(reps).toHaveText('02');
+    await expect(analyzer).toHaveAttribute('data-pause-fixture', fixtureId);
+    expect(await page.evaluate(() => (window as unknown as PoseFixture).terminatedWorkers)).toBe(0);
+  } finally {
+    try {
+      const users = await db.user.findMany({
+        where: { email: { in: [coachEmail, traineeEmail] } },
+        select: { id: true },
+      });
+      const ids = users.map((user) => user.id);
+      await db.auditEvent.deleteMany({ where: { actorId: { in: ids } } });
+      await db.rateLimit.deleteMany({
+        where: {
+          OR: [
+            ...ids.map((id) => ({ key: { contains: `:${id}:` } })),
+            { key: { contains: coachAddress } },
+            { key: { contains: traineeAddress } },
+          ],
+        },
+      });
+      await db.user.deleteMany({ where: { id: { in: ids } } });
+    } finally {
+      await db.$disconnect();
+      await browser.close();
+    }
+  }
+});
 
 test('guided calibration saves a personal range on mobile without starting or counting a set', async () => {
   test.setTimeout(30000);

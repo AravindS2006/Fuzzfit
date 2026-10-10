@@ -31,6 +31,12 @@ import {
 } from '@/lib/pose-engine';
 import { exercises } from '@/lib/catalog';
 import { initialPoseOverlay, updatePoseOverlay, type OverlayPoint } from '@/lib/pose-overlay';
+import { initialPoseContinuity, validatePoseContinuity } from '@/lib/pose-continuity';
+import {
+  initialPoseDiagnostics,
+  poseDiagnosticReport,
+  recordPoseDiagnostics,
+} from '@/lib/pose-diagnostics';
 import { readBrowserPreference } from '@/lib/browser-preferences';
 import {
   defaultWorkoutConfig,
@@ -113,6 +119,10 @@ export function CameraAnalyzer({
     state = useRef(initialPoseState());
   const previewState = useRef(initialPoseState());
   const overlayState = useRef(initialPoseOverlay());
+  const continuityState = useRef(initialPoseContinuity());
+  const diagnosticBuffer = useRef(initialPoseDiagnostics());
+  const [diagnosticsEnabled, setDiagnosticsEnabled] = useState(false);
+  const diagnosticsEnabledRef = useRef(false);
   type Mode = 'setup' | 'active' | 'rest' | 'complete';
   type SetResult = {
     number: number;
@@ -202,6 +212,7 @@ export function CameraAnalyzer({
   voiceRef.current = voice;
   function stop() {
     overlayState.current = initialPoseOverlay();
+    continuityState.current = initialPoseContinuity();
     calibrationRef.current = null;
     setCalibration(null);
     cancelStart();
@@ -405,6 +416,11 @@ export function CameraAnalyzer({
       side: preview.side,
       sideStartSeen: [...preview.sideStartSeen],
       sideStartSource: [...preview.sideStartSource],
+      geometrySource: preview.geometrySource,
+      sideWorldSegments: preview.sideWorldSegments.map((lengths) =>
+        lengths ? [...lengths] : null,
+      ) as [number[] | null, number[] | null],
+      lastRawSignal: preview.lastRawSignal,
       smoothAngle: preview.smoothAngle,
       candidate: preview.candidate,
       candidateSince: preview.candidateSince,
@@ -420,14 +436,14 @@ export function CameraAnalyzer({
     signalRep();
     announce('Go. Your set has started. Move under control.', true);
   }
-  function invalidateTracking(cue: string) {
+  function invalidateTracking(cue: string, preserveContinuity = false) {
     pauseTrainingMetrics(metrics.current);
     overlayState.current = initialPoseOverlay();
+    if (!preserveContinuity) continuityState.current = initialPoseContinuity();
+    calibrationRef.current = null;
+    setCalibration(null);
     canvas.current?.getContext('2d')?.clearRect(0, 0, canvas.current.width, canvas.current.height);
-    state.current.stage = 'seek';
-    state.current.candidate = '';
-    state.current.lastTimestamp = 0;
-    state.current.previousHoldValid = false;
+    state.current = { ...initialPoseState(), ...tally.current };
     previewState.current = initialPoseState();
     startClock.current = initialStartCountdown();
     lastCountdownSound.current = null;
@@ -535,16 +551,8 @@ export function CameraAnalyzer({
   }, [mode, restUntil]);
   useEffect(() => {
     if (paused || localPaused) {
-      pauseTrainingMetrics(metrics.current);
-      overlayState.current = initialPoseOverlay();
-      canvas.current
-        ?.getContext('2d')
-        ?.clearRect(0, 0, canvas.current.width, canvas.current.height);
       cancelStart();
-      state.current.stage = 'seek';
-      state.current.candidate = '';
-      state.current.lastTimestamp = 0;
-      setAnalysis((previous) => ({ ...previous, score: null, confidence: 0, tracked: false }));
+      invalidateTracking('Tracking paused. Resume and return to your starting position.');
       window.speechSynthesis?.cancel();
     }
   }, [paused, localPaused]);
@@ -794,8 +802,18 @@ export function CameraAnalyzer({
               frameStats.current = { frames: 0, since: now };
             }
             const activeSet = modeRef.current === 'active';
-            const result = analyzePose(
+            const observation = validatePoseContinuity(
+              continuityState.current,
               data.poses,
+              data.worldPoses,
+              data.timestamp,
+              data.width,
+              data.height,
+            );
+            if (observation.resetRequired)
+              invalidateTracking('Body tracking changed. Return to your starting position.', true);
+            const result = analyzePose(
+              observation.poses,
               exerciseRef.current,
               activeSet ? state.current : previewState.current,
               data.timestamp,
@@ -803,8 +821,13 @@ export function CameraAnalyzer({
               data.height,
               pausedRef.current,
               configRef.current,
-              data.worldPoses,
+              observation.worldPoses,
             );
+            if (observation.rejected && observation.reason === 'landmark-identity') {
+              result.phase = 'reacquiring body tracking';
+              result.cue =
+                'Left/right tracking is uncertain. Hold your position while tracking settles.';
+            }
             if (calibrationRef.current) {
               const measured = advanceMovementCalibration(
                 calibrationRef.current,
@@ -890,12 +913,29 @@ export function CameraAnalyzer({
             }
             setAnalysis(result);
             analysisCallback.current?.(result);
+            if (diagnosticsEnabledRef.current)
+              recordPoseDiagnostics(diagnosticBuffer.current, {
+                timestamp: data.timestamp,
+                exercise: exerciseRef.current,
+                config: configRef.current,
+                width: data.width,
+                height: data.height,
+                model: modelVariantRef.current,
+                backend: trackingBackend.current,
+                inferenceMs: data.inferenceMs,
+                mode: modeRef.current,
+                stage: (activeSet ? state.current : previewState.current).stage,
+                continuity: observation.reason ?? 'accepted',
+                analysis: result,
+                poses: observation.rawPoses,
+                worldPoses: observation.rawWorldPoses,
+              });
             // Exercise readiness must not erase the entire body visualization.
             // Scoring still uses the original, strictly gated model measurements.
             draw(
               updatePoseOverlay(
                 overlayState.current,
-                data.poses,
+                observation.poses,
                 data.timestamp,
                 data.width,
                 data.height,
@@ -1502,6 +1542,43 @@ export function CameraAnalyzer({
                     </>
                   )}
                 </div>
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={diagnosticsEnabled}
+                    onChange={(event) => {
+                      diagnosticsEnabledRef.current = event.target.checked;
+                      setDiagnosticsEnabled(event.target.checked);
+                      diagnosticBuffer.current = initialPoseDiagnostics();
+                    }}
+                  />
+                  Record tracking report locally
+                </label>
+                <p className="microcopy">
+                  Optional troubleshooting: keeps the last minute of joint coordinates and counter
+                  states on this device. No video or audio is recorded. Nothing is uploaded.
+                </p>
+                <button
+                  type="button"
+                  className="button outline"
+                  disabled={!diagnosticsEnabled || diagnosticBuffer.current.frames.length === 0}
+                  onClick={() => {
+                    const report = poseDiagnosticReport(diagnosticBuffer.current, {
+                      userAgent: navigator.userAgent,
+                      ruleVersion: RULE_VERSION,
+                    });
+                    const url = URL.createObjectURL(
+                      new Blob([JSON.stringify(report)], { type: 'application/json' }),
+                    );
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = 'geez-squad-tracking-report.json';
+                    link.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                  }}
+                >
+                  Download tracking report
+                </button>
               </details>
               {!profile.isHold && mode === 'setup' && (
                 <button

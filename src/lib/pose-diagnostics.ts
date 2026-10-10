@@ -1,0 +1,151 @@
+import type { Analysis, Landmark } from './pose-engine';
+import type { ExerciseId } from './types';
+import type { WorkoutConfig } from './workout-config';
+
+type DiagnosticConfig = Pick<WorkoutConfig, 'side' | 'topAngle' | 'bottomAngle' | 'minRepMs'>;
+
+type DiagnosticPoint = {
+  x: number | null;
+  y: number | null;
+  z: number | null;
+  visibility: number | null;
+  presence: number | null;
+};
+type DiagnosticFrame = {
+  timestamp: number;
+  exercise: ExerciseId;
+  config: DiagnosticConfig;
+  width: number;
+  height: number;
+  model: string;
+  backend: string;
+  inferenceMs: number | null;
+  mode: string;
+  stage: string;
+  continuity: string;
+  analysis: {
+    tracked: boolean;
+    reps: number;
+    angle: number | null;
+    confidence: number;
+    score: number | null;
+    phase: string;
+    cue: string;
+    geometrySource: string | null;
+    trackedSide: string | null;
+    rejectionReason: string | null;
+  };
+  poses: DiagnosticPoint[][];
+  worldPoses: DiagnosticPoint[][];
+};
+
+export type PoseDiagnosticBuffer = { frames: DiagnosticFrame[]; lastTimestamp: number | null };
+export const initialPoseDiagnostics = (): PoseDiagnosticBuffer => ({
+  frames: [],
+  lastTimestamp: null,
+});
+const number = (value: unknown) =>
+  typeof value === 'number' && Number.isFinite(value) ? Math.round(value * 100000) / 100000 : null;
+const points = (poses: Landmark[][] | undefined): DiagnosticPoint[][] =>
+  (poses ?? []).slice(0, 2).map((pose) =>
+    pose.slice(0, 33).map((point) => ({
+      x: number(point?.x),
+      y: number(point?.y),
+      z: number(point?.z),
+      visibility: number(point?.visibility),
+      presence: number(point?.presence),
+    })),
+  );
+
+/** Opt-in, local-only measurements. Never retain image bitmaps, audio, or account data. */
+export function recordPoseDiagnostics(
+  buffer: PoseDiagnosticBuffer,
+  input: {
+    timestamp: number;
+    exercise: ExerciseId;
+    config: DiagnosticConfig;
+    width: number;
+    height: number;
+    model: string;
+    backend: string;
+    inferenceMs: number;
+    mode: string;
+    stage: string;
+    continuity: string;
+    analysis: Analysis;
+    poses: Landmark[][];
+    worldPoses?: Landmark[][];
+  },
+): void {
+  if (!Number.isFinite(input.timestamp) || input.timestamp < 0) return;
+  const previous = buffer.frames.at(-1);
+  if (buffer.lastTimestamp !== null && input.timestamp <= buffer.lastTimestamp) return;
+  const changed =
+    previous &&
+    (previous.continuity !== input.continuity ||
+      previous.stage !== input.stage ||
+      previous.analysis.tracked !== input.analysis.tracked ||
+      previous.analysis.reps !== input.analysis.reps ||
+      previous.analysis.rejectionReason !== (input.analysis.rejectionReason ?? null) ||
+      previous.analysis.geometrySource !== (input.analysis.geometrySource ?? null));
+  if (!changed && buffer.lastTimestamp !== null && input.timestamp - buffer.lastTimestamp < 100)
+    return;
+  buffer.lastTimestamp = input.timestamp;
+  const result = input.analysis;
+  buffer.frames.push({
+    timestamp: input.timestamp,
+    exercise: input.exercise,
+    config: {
+      side: input.config.side,
+      topAngle: input.config.topAngle,
+      bottomAngle: input.config.bottomAngle,
+      minRepMs: input.config.minRepMs,
+    },
+    width: input.width,
+    height: input.height,
+    model: input.model,
+    backend: input.backend,
+    inferenceMs: number(input.inferenceMs),
+    mode: input.mode,
+    stage: input.stage,
+    continuity: input.continuity,
+    analysis: {
+      tracked: result.tracked,
+      reps: result.reps,
+      angle: number(result.angle),
+      confidence: result.confidence,
+      score: number(result.score),
+      phase: result.phase,
+      cue: result.cue,
+      geometrySource: result.geometrySource ?? null,
+      trackedSide: result.trackedSide ?? null,
+      rejectionReason: result.rejectionReason ?? null,
+    },
+    poses: points(input.poses),
+    worldPoses: points(input.worldPoses),
+  });
+  // Ten regular samples per second plus important tracking transitions. Keep
+  // no more than 600 samples or a minute, even under rapidly alternating faults.
+  while (buffer.frames.length > 600 || input.timestamp - buffer.frames[0].timestamp > 60000)
+    buffer.frames.shift();
+}
+
+export function poseDiagnosticReport(
+  buffer: PoseDiagnosticBuffer,
+  metadata: { userAgent: string; ruleVersion: string },
+) {
+  return {
+    version: 1,
+    createdAt: new Date().toISOString(),
+    userAgent: metadata.userAgent,
+    ruleVersion: metadata.ruleVersion,
+    runtime: '@mediapipe/tasks-vision@0.10.32',
+    contents: 'Joint coordinates and counter states; no camera images, audio, or account data.',
+    frameCount: buffer.frames.length,
+    durationMs:
+      buffer.frames.length > 1
+        ? Math.round(buffer.frames.at(-1)!.timestamp - buffer.frames[0].timestamp)
+        : 0,
+    frames: buffer.frames,
+  };
+}

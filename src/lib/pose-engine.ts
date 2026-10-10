@@ -2,7 +2,7 @@ import type { ExerciseId } from './types';
 import { getExerciseProfile, type ExerciseProfile } from './exercise-profiles';
 import { defaultWorkoutConfig, normalizeWorkoutConfig, type WorkoutConfig } from './workout-config';
 
-export const RULE_VERSION = 'profile-v4';
+export const RULE_VERSION = 'profile-v5';
 export type Landmark = { x: number; y: number; z?: number; visibility?: number; presence?: number };
 export type Analysis = {
   reps: number;
@@ -54,6 +54,7 @@ export type PoseState = {
   lastObservedAt: number;
   observedMs: number;
   returnEvidenceRequired: boolean;
+  returnMovementSeen: boolean;
   cycleFormTotal: number;
   cycleConfidenceTotal: number;
   cycleSamples: number;
@@ -97,6 +98,7 @@ export function initialPoseState(): PoseState {
     lastObservedAt: 0,
     observedMs: 0,
     returnEvidenceRequired: false,
+    returnMovementSeen: false,
     cycleFormTotal: 0,
     cycleConfidenceTotal: 0,
     cycleSamples: 0,
@@ -162,6 +164,7 @@ function resetCycle(state: PoseState, releaseSide = false) {
   state.bottomSeen = false;
   state.observedMs = 0;
   state.returnEvidenceRequired = false;
+  state.returnMovementSeen = false;
   state.previousHoldValid = false;
   state.filters = {};
   state.geometrySource = null;
@@ -203,7 +206,7 @@ function suspend(
 ): Analysis {
   state.previousHoldValid = false;
   state.missingSince ??= timestamp;
-  if (state.stage === 'working') state.returnEvidenceRequired = true;
+  if (state.stage === 'working' && !state.returnMovementSeen) state.returnEvidenceRequired = true;
   if (!state.lastTimestamp || timestamp - state.lastTimestamp > graceMs) resetCycle(state, true);
   return unavailable(state, cue, confidence);
 }
@@ -510,9 +513,14 @@ export function analyzePose(
   ) {
     const current = sideSignals[side],
       other = sideSignals[1 - side];
+    // Readiness survives small endpoint jitter inside the hysteresis band. Use
+    // that same band for handoff, or an inactive arm at 142° can indefinitely
+    // prevent choosing the other arm even though it has an observed start.
     const currentAtStart =
       current !== null &&
-      (profile.direction === 'decrease' ? current >= startEndpoint : current <= startEndpoint);
+      (profile.direction === 'decrease'
+        ? current >= startEndpoint - profile.hysteresis
+        : current <= startEndpoint + profile.hysteresis);
     const otherMoving =
       other !== null &&
       (profile.direction === 'decrease'
@@ -531,6 +539,10 @@ export function analyzePose(
       state.smoothAngle = null;
       state.lastRawSignal = null;
       state.rawVelocity = 0;
+      // This limb has its own recent, source-matched start evidence above.
+      // Its geometry lock must not inherit the inactive limb's measurement
+      // space; same-limb source changes still require reacquisition below.
+      state.geometrySource = null;
     }
   }
   const confidence = profile.bilateral ? Math.min(left, right) : side === 0 ? left : right;
@@ -662,6 +674,10 @@ export function analyzePose(
     );
   if (state.stage === 'working' && state.geometrySource === '2d') source = '2d';
   if (source !== state.geometrySource) {
+    // Entry evidence belongs to its measurement space. A newly available depth
+    // estimate, or a fallback to image geometry, must observe its own start
+    // before it can complete a cycle. Completed repetitions remain intact.
+    if (state.geometrySource !== null) resetCycle(state, false);
     delete state.filters.angle;
     state.smoothAngle = null;
     state.lastRawSignal = null;
@@ -819,6 +835,7 @@ export function analyzePose(
     state.cycleInvalidMs = 0;
     state.previousFormValid = form.valid;
     state.returnEvidenceRequired = false;
+    state.returnMovementSeen = false;
   }
   if (state.stage === 'working') {
     if (!returningFromLoss && gap > 0 && gap <= profile.occlusionGraceMs) state.observedMs += gap;
@@ -853,8 +870,25 @@ export function analyzePose(
       (previousCandidate === 'bottom' || (observedApproach && Math.abs(rawVelocity) <= 1000))
     )
       state.bottomSeen = true;
-    if (returningFromLoss && state.bottomSeen) state.returnEvidenceRequired = true;
-    if (state.returnEvidenceRequired && candidate === 'moving')
+    // A measured return interval remains evidence after a later brief gap.
+    // Requiring another midpoint after every missing frame erased valid returns
+    // whenever a rejected identity frame fell immediately before the start.
+    // Only actual progress away from the observed endpoint supplies evidence;
+    // a lost bottom followed directly by the start still cannot complete a rep.
+    if (
+      state.bottomSeen &&
+      candidate === 'moving' &&
+      !returningFromLoss &&
+      gap > 0 &&
+      gap <= profile.occlusionGraceMs &&
+      (decreasing
+        ? rawVelocity > 5 && rawSignal > state.cycleMin + profile.hysteresis
+        : rawVelocity < -5 && rawSignal < state.cycleMax - profile.hysteresis)
+    )
+      state.returnMovementSeen = true;
+    if (returningFromLoss && state.bottomSeen && !state.returnMovementSeen)
+      state.returnEvidenceRequired = true;
+    if (state.returnEvidenceRequired && state.returnMovementSeen)
       state.returnEvidenceRequired = false;
     if (timestamp - state.startedAt > profile.maxRepMs) {
       reject(

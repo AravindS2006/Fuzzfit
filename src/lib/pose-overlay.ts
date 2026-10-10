@@ -16,14 +16,16 @@ export function initialPoseOverlay(): PoseOverlayState {
 
 const alpha = (cutoff: number, seconds: number) => 1 / (1 + 1 / (2 * Math.PI * cutoff * seconds));
 
-function smooth(raw: number, previous: Axis | undefined, seconds: number): Axis {
+function smooth(raw: number, previous: Axis | undefined, seconds: number, anchor: boolean): Axis {
   if (!previous || Math.abs(raw - previous.raw) > 0.15) return { raw, value: raw, velocity: 0 };
   // Light One Euro smoothing in units of the image's shorter dimension.
   // Raising the cutoff with speed follows moving joints without fixed-filter lag.
   const velocity =
     previous.velocity + alpha(1, seconds) * ((raw - previous.raw) / seconds - previous.velocity);
   const value =
-    previous.value + alpha(4 + 30 * Math.abs(velocity), seconds) * (raw - previous.value);
+    previous.value +
+    alpha((anchor ? 1.2 : 4) + (anchor ? 10 : 30) * Math.abs(velocity), seconds) *
+      (raw - previous.value);
   return { raw, value, velocity };
 }
 
@@ -77,14 +79,18 @@ export function updatePoseOverlay(
     }
     const rawX = (point.x * width) / scale;
     const rawY = (point.y * height) / scale;
-    const x = smooth(rawX, previous?.x, seconds);
-    const y = smooth(rawY, previous?.y, seconds);
-    // Bound display lag to 0.8% of the shorter image dimension (5.8 px at 720p).
-    // The rendered joint stays close to this frame even during rapid motion.
+    const anchor = [11, 12, 23, 24].includes(index);
+    // The torso should not respond to prediction noise as aggressively as fast
+    // wrists/ankles. Anatomical identity is validated before this display filter.
+    const x = smooth(rawX, previous?.x, seconds, anchor);
+    const y = smooth(rawY, previous?.y, seconds, anchor);
+    const maximumOffset = anchor ? 0.02 : 0.008;
+    // Bounds are image-space limits, not a claim of anatomical accuracy. Torso
+    // anchors allow 14.4 px at 720p; moving extremities retain their 5.8 px limit.
     const offset = Math.hypot(x.value - rawX, y.value - rawY);
-    if (offset > 0.008) {
-      x.value = rawX + ((x.value - rawX) * 0.008) / offset;
-      y.value = rawY + ((y.value - rawY) * 0.008) / offset;
+    if (offset > maximumOffset) {
+      x.value = rawX + ((x.value - rawX) * maximumOffset) / offset;
+      y.value = rawY + ((y.value - rawY) * maximumOffset) / offset;
     }
     state.joints[index] = { x, y };
     return {

@@ -197,6 +197,106 @@ describe('profile v3 movement pipeline', () => {
     }
     expect(state.reps).toBe(0);
   });
+  it('selects the moving arm when the inactive arm stays inside the starting hysteresis band', () => {
+    const state = initialPoseState();
+    let result;
+    // Both limbs have an observed extended start. The left arm then jitters just
+    // below the entry endpoint, without crossing its departure threshold.
+    const rightAngles = [170, 170, 160, 148, 137, 120, 98, 80, 75, 90, 115, 135, 153, 170];
+    for (let index = 0; index < rightAngles.length; index++) {
+      const { image } = phoneFrontCurl(rightAngles[index], 'right');
+      const leftAngle = index < 2 ? 150 : 142;
+      const radians = (leftAngle * Math.PI) / 180;
+      image[15] = {
+        x: image[13].x + (Math.sin(radians) * 0.1 * 844) / 390,
+        y: image[13].y - Math.cos(radians) * 0.1,
+        visibility: 0.95,
+        presence: 0.95,
+      };
+      result = analyzePose([image], 'curl', state, 100 + index * 100, 390, 844);
+    }
+    expect(result!.tracked).toBe(true);
+    expect(state.reps).toBe(1);
+    expect(state.side).toBe(1);
+  });
+  it.each(['3d-to-2d', '2d-to-3d'] as const)(
+    'counts ten complete automatic curls after a source-matched mixed-arm %s handoff',
+    (handoff) => {
+      const state = initialPoseState();
+      const depthMotion = handoff === '2d-to-3d';
+      for (let index = 0; index <= 10 * 48 + 24; index++) {
+        const elapsed = Math.max(0, index - 12);
+        const angle = elapsed >= 10 * 48 ? 170 : 120 + 50 * Math.cos((elapsed / 48) * Math.PI * 2);
+        const { image, world } = phoneFrontCurl(angle, 'right', depthMotion);
+        // Different reliable spaces are available for each arm: the active
+        // limb must use its own observed start, never the inactive limb's angle.
+        world[handoff === '3d-to-2d' ? 14 : 13].visibility = 0.2;
+        analyzePose([image], 'curl', state, 100 + (index * 1000) / 24, 390, 844, false, {}, [
+          world,
+        ]);
+      }
+      expect(state.side).toBe(1);
+      expect(state.geometrySource).toBe(depthMotion ? '3d' : '2d');
+      expect(state.reps).toBe(10);
+    },
+  );
+  it.each(['3d-to-2d', '2d-to-3d'] as const)(
+    'does not hand off %s to an already-bent arm whose own start was unseen',
+    (handoff) => {
+      const state = initialPoseState();
+      let timestamp = 100;
+      const frame = (angle: number) => {
+        const { image, world } = phoneFrontCurl(angle, 'right', handoff === '2d-to-3d');
+        world[handoff === '3d-to-2d' ? 14 : 13].visibility = 0.2;
+        analyzePose([image], 'curl', state, timestamp, 390, 844, false, {}, [world]);
+        timestamp += 100;
+      };
+      for (let index = 0; index < 8; index++) frame(75);
+      expect(state.stage).toBe('ready');
+      expect(state.side).toBe(0);
+      for (const angle of [95, 120, 140, 160, 170, 170]) frame(angle);
+      expect(state.reps).toBe(0);
+      for (const angle of [170, 155, 135, 110, 85, 75, 75, 95, 120, 140, 160, 170]) frame(angle);
+      expect(state.side).toBe(1);
+      expect(state.reps).toBe(1);
+    },
+  );
+  it.each(['2d-to-3d', '3d-to-2d'] as const)(
+    'requires a new observed start after a ready-state %s geometry change',
+    (transition) => {
+      const state = initialPoseState();
+      let timestamp = 100;
+      const frameWithSource = (angle: number, source: '2d' | '3d') => {
+        const { image, world } = phoneFrontCurl(angle, 'right', source === '3d');
+        const result = analyzePose(
+          [image],
+          'curl',
+          state,
+          timestamp,
+          390,
+          844,
+          false,
+          { side: 'right' },
+          source === '3d' ? [world] : undefined,
+        );
+        timestamp += 100;
+        return result;
+      };
+      const initial = transition === '2d-to-3d' ? '2d' : '3d';
+      const next = initial === '2d' ? '3d' : '2d';
+      for (let index = 0; index < 6; index++) frameWithSource(170, initial);
+      expect(state.stage).toBe('ready');
+      // The new measurement space first sees an already-bent arm. Its lower
+      // endpoint cannot inherit the old space's starting evidence.
+      for (let index = 0; index < 8; index++) frameWithSource(75, next);
+      for (const angle of [95, 120, 140, 160, 170, 170]) frameWithSource(angle, next);
+      expect(state.reps).toBe(0);
+      expect(state.stage).toBe('ready');
+      for (const angle of [155, 135, 110, 85, 75, 75, 95, 120, 140, 160, 170])
+        frameWithSource(angle, next);
+      expect(state.reps).toBe(1);
+    },
+  );
   it('counts ten slight-angle phone curls without a global side-on restriction', () => {
     const state = initialPoseState();
     for (let index = 0; index <= 10 * 48 + 12; index++) {
@@ -296,6 +396,40 @@ describe('profile v3 movement pipeline', () => {
     for (let i = 0; i < 8; i++) frame(state, 75, 700 + i * 100);
     analyzePose([], 'curl', state, 1450, W, H);
     for (let i = 0; i < 6; i++) frame(state, 170, 1550 + i * 100);
+    expect(state.reps).toBe(0);
+  });
+  it('retains measured return movement through a brief missing frame immediately before extension', () => {
+    const state = initialPoseState();
+    for (let i = 0; i < 6; i++) frame(state, 170, 100 + i * 100);
+    [140, 128, 116, 104, 92, 80, 100, 120, 140].forEach((angle, i) =>
+      frame(state, angle, 700 + i * 100),
+    );
+    const observedBefore = state.observedMs;
+    analyzePose([], 'curl', state, 1550, W, H);
+    frame(state, 170, 1600);
+    expect(state.reps).toBe(1);
+    // The interval across loss is excluded even when earlier return evidence
+    // allows a complete observed endpoint to finish the same movement.
+    expect(state.observedMs).toBe(observedBefore);
+  });
+  it('does not reuse return evidence from a completed rep for a later unseen return', () => {
+    const state = initialPoseState();
+    for (let i = 0; i < 6; i++) frame(state, 170, 100 + i * 100);
+    [140, 128, 116, 104, 92, 80, 100, 120, 140, 170].forEach((angle, i) =>
+      frame(state, angle, 700 + i * 100),
+    );
+    expect(state.reps).toBe(1);
+    for (let i = 0; i < 6; i++) frame(state, 170, 1700 + i * 100);
+    [140, 128, 116, 104, 92, 80, 75, 75].forEach((angle, i) => frame(state, angle, 2300 + i * 100));
+    analyzePose([], 'curl', state, 3050, W, H);
+    for (let i = 0; i < 6; i++) frame(state, 170, 3150 + i * 100);
+    expect(state.reps).toBe(1);
+  });
+  it('does not infer a complete unseen curl between two extended observations', () => {
+    const state = initialPoseState();
+    for (let i = 0; i < 6; i++) frame(state, 170, 100 + i * 100);
+    for (let i = 0; i < 3; i++) analyzePose([], 'curl', state, 650 + i * 100, W, H);
+    for (let i = 0; i < 6; i++) frame(state, 170, 900 + i * 100);
     expect(state.reps).toBe(0);
   });
   it('invalidates a pending cycle after sustained occlusion or a camera resolution change', () => {
